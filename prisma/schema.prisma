@@ -1,0 +1,240 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+
+
+
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Roles del sistema
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String @unique // ADMIN, DRIVER, CITIZEN
+  users User[]
+}
+
+// Usuarios (Better Auth se integra con este modelo)
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String? // solo si no usa OAuth
+  roleId        Int
+  role          Role      @relation(fields: [roleId], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relaciones específicas
+  driverProfile  DriverProfile? // si es DRIVER
+  citizenProfile CitizenProfile? // si es CITIZEN
+  // Corrección: Relación para incidentes reportados por el chofer
+  incidentsReported Incident[] @relation("DriverIncidents")
+  
+  // Corrección: Relación para lecturas GPS
+  gpsReadings GPSReading[]
+
+  // Mantenemos la relación con Session del esquema original
+  sessions Session[]
+}
+
+// Mantenemos el modelo Session del esquema original
+model Session {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token     String   @unique
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+// Perfil de chofer (datos adicionales)
+model DriverProfile {
+  id           String          @id @default(cuid())
+  userId       String          @unique
+  user         User            @relation(fields: [userId], references: [id])
+  licensePlate String // placa del camión
+  phone        String
+  isActive     Boolean         @default(true)
+}
+
+// Perfil de ciudadano (datos opcionales)
+model CitizenProfile {
+  id        String     @id @default(cuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id])
+  phone     String?
+  address   String?
+  incidents Incident[]
+}
+
+enum Shift {
+  MANANA
+  TARDE
+  NOCHE
+  DOMINGO
+}
+
+enum RouteType {
+  NORMAL
+  REPECHAJE
+  FURGON
+  TURNO_DOMINICAL
+  TURNO_NOCHE
+}
+
+enum Day {
+  LUNES
+  MARTES
+  MIERCOLES
+  JUEVES
+  VIERNES
+  SABADO
+  DOMINGO
+}
+
+model Zone {
+  id       Int      @id @default(autoincrement())
+  name     String   @unique
+  routes   Route[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Route {
+  id       Int       @id @default(autoincrement())
+  zoneId   Int?
+  zone     Zone?     @relation(fields: [zoneId], references: [id])
+  shift    Shift
+  type     RouteType
+  schedules Schedule[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([zoneId])
+  @@index([shift])
+  @@index([type])
+}
+
+model Schedule {
+  id            Int       @id @default(autoincrement())
+  routeId       Int
+  route         Route     @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  days          Day[]
+  departureTime String?
+  arrivalTime   String?
+  zoneName      String?
+  waypoints     Waypoint[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([routeId])
+}
+
+model Waypoint {
+  id             Int       @id @default(autoincrement())
+  scheduleId     Int
+  schedule       Schedule  @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  sequence       Int
+  originPoint    String
+  destinationPoint String
+  departureTime  String?
+  arrivalTime    String?
+  hasCampanio    Boolean
+  observations   String?
+  originalId     Int
+  lat            Float?    // Coordenada de latitud (editable desde el mapa admin)
+  lng            Float?    // Coordenada de longitud (editable desde el mapa admin)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([scheduleId])
+}
+
+// Incidencias reportadas (ciudadano o sistema)
+model Incident {
+  id          Int             @id @default(autoincrement())
+  title       String
+  description String
+  type        IncidentType
+  status      IncidentStatus  @default(PENDING)
+  lat         Float? // ubicación
+  lng         Float?
+  zona        String? // Nombre de la zona
+  citizenId   String? // si lo reporta un ciudadano logueado
+  citizen     CitizenProfile? @relation(fields: [citizenId], references: [userId])
+
+  // Corrección: Relación con el chofer que reporta
+  driverId String?
+  driver   User?   @relation("DriverIncidents", fields: [driverId], references: [id])
+
+  images     Json? // array de URLs de fotos
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+}
+
+enum IncidentType {
+  MISSED_COLLECTION
+  SPILL
+  BLOCKED_ROAD
+  VEHICLE_BREAKDOWN
+  OTHER
+}
+
+enum IncidentStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+}
+
+// Avisos públicos
+model Announcement {
+  id        Int       @id @default(autoincrement())
+  title     String
+  content   String
+  isActive  Boolean   @default(true)
+  priority  Priority  @default(NORMAL)
+  expiresAt DateTime? // si tiene caducidad
+  images    Json?     // array de URLs de fotos
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// Lecturas GPS (para monitoreo en tiempo real)
+model GPSReading {
+  id        Int      @id @default(autoincrement())
+  driverId  String
+  driver    User     @relation(fields: [driverId], references: [id])
+  lat       Float
+  lng       Float
+  speed     Float? // km/h
+  timestamp DateTime @default(now())
+}
+
+// Alertas enviadas a ciudadanos (push/email)
+model Alert {
+  id      Int      @id @default(autoincrement())
+  title   String
+  message String
+  zona    String? // si es específica de zona
+  sentAt  DateTime @default(now())
+}
