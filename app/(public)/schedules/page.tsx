@@ -128,13 +128,13 @@ export default function SchedulesPage() {
   const schedulesSafe = schedules ?? []
 
   const scheduleGroups = schedulesSafe.reduce<Record<string, {
-    scheduleId: number; zoneName: string; shift: string; days: string[]; waypoints: FlatSchedule[]
+    scheduleId: number; zoneName: string; shift: string; days: string[]; waypoints: FlatSchedule[]; isSuspended: boolean;
   }>>((acc, s) => {
     const zoneName = s.zoneName || 'Sin Zona'
     if (!/^ZONA\s*0?[1-5]$/i.test(zoneName)) return acc
     const key = `${s.scheduleId}`
     if (!acc[key]) {
-      acc[key] = { scheduleId: s.scheduleId, zoneName, shift: s.shift, days: s.days, waypoints: [] }
+      acc[key] = { scheduleId: s.scheduleId, zoneName, shift: s.shift, days: s.days, waypoints: [], isSuspended: s.isSuspended }
     }
     acc[key].waypoints.push(s)
     return acc
@@ -292,18 +292,18 @@ export default function SchedulesPage() {
               <div className="space-y-8">
                 {Object.values(scheduleGroups).map((group) => {
                   // Construir nodos del timeline a partir de los waypoints
-                  type TimelineNode = { location: string; time: string | null; type: 'start' | 'stop' | 'end'; obs: string }
+                  type TimelineNode = { location: string; time: string | null; type: 'start' | 'stop' | 'end'; obs: string; isSuspended: boolean }
                   const nodes: TimelineNode[] = []
                   group.waypoints.forEach((w, i) => {
                     if (i === 0) {
-                      nodes.push({ location: w.originPoint, time: w.waypointDepartureTime, type: 'start', obs: 'Punto de partida del camión.' })
+                      nodes.push({ location: w.originPoint, time: w.waypointDepartureTime, type: 'start', obs: 'Punto de partida del camión.', isSuspended: w.isWaypointSuspended })
                     } else {
-                      nodes.push({ location: w.originPoint, time: w.waypointDepartureTime, type: 'stop', obs: w.observations || 'Recolección aquí. Asegúrese de tener sus desechos listos.' })
+                      nodes.push({ location: w.originPoint, time: w.waypointDepartureTime, type: 'stop', obs: w.observations || 'Recolección aquí. Asegúrese de tener sus desechos listos.', isSuspended: w.isWaypointSuspended })
                     }
                   })
                   if (group.waypoints.length > 0) {
                     const last = group.waypoints[group.waypoints.length - 1]
-                    nodes.push({ location: last.destinationPoint, time: last.waypointArrivalTime, type: 'end', obs: 'Última parada del recorrido.' })
+                    nodes.push({ location: last.destinationPoint, time: last.waypointArrivalTime, type: 'end', obs: 'Última parada del recorrido.', isSuspended: last.isWaypointSuspended })
                   }
                   const NODE_LABELS: Record<string, string> = {
                     start: 'INICIO RUTA',
@@ -312,7 +312,15 @@ export default function SchedulesPage() {
                   }
 
                   return (
-                    <div key={group.scheduleId} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                    <div key={group.scheduleId} className={`bg-white rounded-3xl border shadow-sm overflow-hidden transition-shadow ${group.isSuspended ? 'border-red-200 shadow-red-100/50' : 'border-slate-200 hover:shadow-md'}`}>
+
+                      {/* Banner de Suspensión */}
+                      {group.isSuspended && (
+                        <div className="bg-red-500 text-white px-6 py-3 flex items-center justify-center gap-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                          <span className="font-extrabold uppercase tracking-wide text-sm">Servicio Suspendido Temporalmente</span>
+                        </div>
+                      )}
 
                       {/* Header verde */}
                       <div className="bg-gradient-to-r from-emerald-600 to-emerald-500 px-6 py-4 flex items-center gap-3">
@@ -399,12 +407,14 @@ export default function SchedulesPage() {
 
                                 {/* Columna del marcador + conector */}
                                 <div className="flex flex-col items-center w-14 shrink-0">
-                                  {/* Señal STOP octagonal: verde solo si coincide con la búsqueda */}
+                                  {/* Señal STOP octagonal: rojo si está suspendida, verde si coincide, gris por defecto */}
                                   <div
                                     className={`w-12 h-12 flex items-center justify-center text-[9px] font-extrabold text-white tracking-wider shrink-0 z-10 transition-all ${
-                                      isMatch
-                                        ? 'bg-emerald-500 shadow-lg shadow-emerald-500/30'
-                                        : 'bg-slate-400'
+                                      node.isSuspended
+                                        ? 'bg-red-500 shadow-lg shadow-red-500/30 line-through decoration-white/50'
+                                        : isMatch
+                                          ? 'bg-emerald-500 shadow-lg shadow-emerald-500/30'
+                                          : 'bg-slate-400'
                                     }`}
                                     style={{ clipPath: 'polygon(30% 0%,70% 0%,100% 30%,100% 70%,70% 100%,30% 100%,0% 70%,0% 30%)' }}
                                   >
@@ -414,35 +424,31 @@ export default function SchedulesPage() {
                                   {!isLast && (
                                     <div className="flex flex-col items-center flex-1 py-1" style={{ minHeight: '44px' }}>
                                       <div className={`w-0.5 flex-1 ${
-                                        isMatch ? 'bg-emerald-400' : 'bg-slate-300'
+                                        node.isSuspended ? 'bg-red-200' : isMatch ? 'bg-emerald-400' : 'bg-slate-300'
                                       }`} />
-                                      <svg width="10" height="6" viewBox="0 0 10 6" className="shrink-0" fill={isMatch ? '#34d399' : '#cbd5e1'}>
+                                      <svg width="10" height="6" viewBox="0 0 10 6" className="shrink-0" fill={node.isSuspended ? '#fecaca' : isMatch ? '#34d399' : '#cbd5e1'}>
                                         <path d="M5 6L0 0h10z"/>
                                       </svg>
                                     </div>
                                   )}
                                 </div>
 
-                                {/* Contenido del nodo */}
-                                <div className={`flex-1 min-w-0 ${!isLast ? 'pb-5' : 'pb-0'}`}>
-                                  <div className="flex items-center gap-2 flex-wrap">
+                                {/* Contenido de la parada */}
+                                <div className={`flex-1 min-w-0 ${!isLast ? 'pb-6' : 'pb-0'} pt-1 ${node.isSuspended ? 'opacity-60' : ''}`}>
+                                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                                     <p className="font-extrabold text-slate-800 text-sm md:text-base leading-tight">
-                                      <span className="font-mono">{node.time ? formatTime(node.time) : '--:--'}</span>{' '}
-                                      <span className={isMatch ? 'text-emerald-600' : 'text-slate-700'}>— {NODE_LABELS[node.type]}</span>
+                                      <span className={`font-mono ${node.isSuspended ? 'line-through text-slate-500' : ''}`}>{node.time ? formatTime(node.time) : '--:--'}</span>{' '}
+                                      <span className={isMatch && !node.isSuspended ? 'text-emerald-600' : 'text-slate-700'}>
+                                        — {node.isSuspended ? 'PARADA SUSPENDIDA' : NODE_LABELS[node.type]}
+                                      </span>
                                     </p>
-                                    {/* Píldora indicadora cuando la parada coincide con la búsqueda */}
-                                    {isMatch && (
-                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                                    {isMatch && !node.isSuspended && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1 border border-emerald-200 animate-pulse shadow-sm">
                                         📍 Tu calle
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-xs text-slate-600 mt-1">
-                                    <span className="font-semibold text-slate-500">Ubicación:</span>{' '}
-                                    <span className={`font-bold uppercase ${
-                                      isMatch ? 'text-emerald-700' : 'text-slate-800'
-                                    }`}>{node.location}</span>
-                                  </p>
+                                  <p className={`font-semibold text-slate-800 ${node.isSuspended ? 'line-through text-slate-500' : ''}`}>{node.location}</p>
                                   <p className="text-xs text-slate-400 mt-1 leading-relaxed">{node.obs}</p>
                                 </div>
 

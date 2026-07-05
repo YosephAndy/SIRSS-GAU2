@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+// Force hot reload for Prisma client
 
 export type FlatSchedule = {
   id: number
@@ -22,6 +23,8 @@ export type FlatSchedule = {
   originalId: number
   lat: number | null
   lng: number | null
+  isSuspended: boolean
+  isWaypointSuspended: boolean
 }
 
 function waypointToFlatSchedule(
@@ -38,12 +41,14 @@ function waypointToFlatSchedule(
     originalId: number
     lat: number | null
     lng: number | null
+    isSuspended: boolean
   },
   schedule: {
     id: number
     days: string[]
     departureTime: string | null
     arrivalTime: string | null
+    isSuspended: boolean
     route: {
       id: number
       zoneId: number | null
@@ -75,6 +80,8 @@ function waypointToFlatSchedule(
     originalId: waypoint.originalId,
     lat: waypoint.lat ?? null,
     lng: waypoint.lng ?? null,
+    isSuspended: schedule.isSuspended,
+    isWaypointSuspended: waypoint.isSuspended,
   }
 }
 
@@ -329,5 +336,19 @@ export async function updateWaypointCoords(updates: { id: number; lat: number; l
 export async function getAllZones() {
   return prisma.zone.findMany({
     orderBy: { name: 'asc' },
+  })
+}
+
+export async function toggleScheduleSuspension(scheduleId: number, isSuspended: boolean) {
+  return prisma.schedule.update({
+    where: { id: scheduleId },
+    data: { isSuspended },
+  })
+}
+
+export async function toggleWaypointSuspension(waypointId: number, isSuspended: boolean) {
+  return prisma.waypoint.update({
+    where: { id: waypointId },
+    data: { isSuspended },
   })
 }
