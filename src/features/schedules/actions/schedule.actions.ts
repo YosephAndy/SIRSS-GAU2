@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { getSession, isAdmin } from '@/lib/auth'
-import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords } from '../services/schedule.service'
+import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords, toggleScheduleSuspension, toggleWaypointSuspension } from '../services/schedule.service'
 import { scheduleFormSchema } from '../schemas/schedule.schema'
 
 export async function createScheduleAction(data: z.infer<typeof scheduleFormSchema>) {
@@ -173,5 +173,63 @@ export async function saveWaypointCoordsAction(updates: { id: number; lat: numbe
   } catch (error) {
     console.error('[SAVE_COORDS_ACTION_ERROR]:', error)
     return { success: false, message: 'Error al guardar las coordenadas.' }
+  }
+}
+
+export async function toggleScheduleSuspensionAction(scheduleId: number, isSuspended: boolean) {
+  try {
+    const session = await getSession()
+    if (!session || !isAdmin(session)) {
+      return { success: false, message: 'No autorizado. Se requieren permisos de administrador.' }
+    }
+
+    if (typeof scheduleId !== 'number' || isNaN(scheduleId)) {
+      return { success: false, message: 'ID de horario inválido.' }
+    }
+
+    await toggleScheduleSuspension(scheduleId, isSuspended)
+
+    revalidatePath('/admin/schedules')
+    revalidatePath('/schedules')
+
+    return {
+      success: true,
+      message: `El servicio ha sido ${isSuspended ? 'suspendido' : 'reactivado'} correctamente.`,
+    }
+  } catch (error) {
+    console.error('[TOGGLE_SUSPENSION_ACTION_ERROR]:', error)
+    return {
+      success: false,
+      message: 'Ocurrió un error inesperado al actualizar el estado del servicio.',
+    }
+  }
+}
+
+export async function toggleWaypointSuspensionAction(waypointId: number, isSuspended: boolean) {
+  try {
+    const session = await getSession()
+    if (!session || !isAdmin(session)) {
+      return { success: false, message: 'No autorizado. Se requieren permisos de administrador.' }
+    }
+
+    if (typeof waypointId !== 'number' || isNaN(waypointId)) {
+      return { success: false, message: 'ID de parada inválido.' }
+    }
+
+    await toggleWaypointSuspension(waypointId, isSuspended)
+
+    revalidatePath('/admin/schedules')
+    revalidatePath('/schedules')
+
+    return {
+      success: true,
+      message: `La parada ha sido ${isSuspended ? 'suspendida' : 'reactivada'} correctamente.`,
+    }
+  } catch (error) {
+    console.error('[TOGGLE_WAYPOINT_SUSPENSION_ACTION_ERROR]:', error)
+    return {
+      success: false,
+      message: 'Ocurrió un error inesperado al actualizar el estado de la parada.',
+    }
   }
 }
