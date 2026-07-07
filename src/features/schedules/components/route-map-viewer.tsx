@@ -12,8 +12,9 @@ const MapComponent = dynamic(() => import('./map'), {
 interface RouteMapViewerProps {
   routeKey: string
   dataset: any[]
+  isFullscreen?: boolean
 }
 
-export function RouteMapViewer({ routeKey, dataset }: RouteMapViewerProps) {
-  return <MapComponent routeKey={routeKey} dataset={dataset} />
+export function RouteMapViewer({ routeKey, dataset, isFullscreen }: RouteMapViewerProps) {
+  return <MapComponent routeKey={routeKey} dataset={dataset} isFullscreen={isFullscreen} />
 }

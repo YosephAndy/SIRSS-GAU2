@@ -2,14 +2,14 @@
 
 import React, { useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
-import { Search, MapPin, Clock, Calendar, Truck, ChevronDown, ChevronUp, X, List } from 'lucide-react'
+import { Search, MapPin, Clock, Calendar, Truck, ChevronDown, ChevronUp, X, List, Maximize, Minimize } from 'lucide-react'
 import type { FlatSchedule } from '@/features/schedules/services/schedule.service'
 import useSWR from 'swr'
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
 
 // Cargamos el map viewer dinámicamente
-const RouteMapViewer = dynamic<{ routeKey: string; dataset: FlatSchedule[] }>(
+const RouteMapViewer = dynamic<{ routeKey: string; dataset: FlatSchedule[]; isFullscreen?: boolean }>(
   () => import('@/features/schedules/components/route-map-viewer').then((m) => m.RouteMapViewer as any),
   { ssr: false, loading: () => <div className="h-[320px] bg-slate-100 animate-pulse rounded-2xl" /> }
 )
@@ -270,6 +270,7 @@ function RouteCard({ route, isExpanded, colorIdx, dataset, onToggle }: {
   onToggle: () => void
 }) {
   const [showSequence, setShowSequence] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow group">
@@ -395,12 +396,21 @@ function RouteCard({ route, isExpanded, colorIdx, dataset, onToggle }: {
           </div>
 
           {/* Mapa Grande */}
-          <div>
-            <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest mb-3">
-              Mapa del recorrido
-            </h4>
-            <div className="rounded-2xl overflow-hidden shadow-sm border border-slate-200 h-[500px]">
-              <RouteMapViewer routeKey={route.key} dataset={dataset} />
+          <div className={isFullscreen ? "fixed inset-0 z-[100] bg-slate-50 flex flex-col h-screen w-screen p-4 md:p-8" : ""}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest">
+                Mapa del recorrido {isFullscreen && `- ${route.zoneName}`}
+              </h4>
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg shadow-sm hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+              >
+                {isFullscreen ? <><Minimize size={14} /> Salir de pantalla completa</> : <><Maximize size={14} /> Pantalla completa</>}
+              </button>
+            </div>
+            
+            <div className={`rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-white ${isFullscreen ? 'flex-1' : 'h-[500px]'}`}>
+              <RouteMapViewer routeKey={route.key} dataset={dataset} isFullscreen={isFullscreen} />
             </div>
           </div>
         </div>

@@ -352,3 +352,52 @@ export async function toggleWaypointSuspension(waypointId: number, isSuspended: 
     data: { isSuspended },
   })
 }
+
+/**
+ * Añade un waypoint a un schedule existente desde el mapa.
+ * La secuencia se asigna como el máximo actual + 1.
+ */
+export async function addMapWaypoint(data: {
+  scheduleId: number
+  lat: number
+  lng: number
+  originPoint: string
+  destinationPoint: string
+}): Promise<FlatSchedule> {
+  // Buscar la secuencia máxima actual
+  const maxSeq = await prisma.waypoint.aggregate({
+    where: { scheduleId: data.scheduleId },
+    _max: { sequence: true },
+  })
+  const nextSeq = (maxSeq._max.sequence ?? 0) + 1
+
+  const waypoint = await prisma.waypoint.create({
+    data: {
+      scheduleId: data.scheduleId,
+      sequence: nextSeq,
+      originPoint: data.originPoint,
+      destinationPoint: data.destinationPoint,
+      lat: data.lat,
+      lng: data.lng,
+      hasCampanio: false,
+      originalId: 0,
+    },
+  })
+
+  const fullSchedule = await prisma.schedule.findUnique({
+    where: { id: data.scheduleId },
+    include: {
+      route: { include: { zone: true } },
+      waypoints: { where: { id: waypoint.id } },
+    },
+  })
+
+  return waypointToFlatSchedule(waypoint, fullSchedule!)
+}
+
+/**
+ * Elimina un waypoint del mapa por su ID.
+ */
+export async function deleteMapWaypoint(waypointId: number) {
+  return prisma.waypoint.delete({ where: { id: waypointId } })
+}
