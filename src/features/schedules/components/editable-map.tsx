@@ -1,28 +1,11 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
+import React, { useState, useEffect, useMemo } from 'react'
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 
-// Icono estándar azul
-const blueIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-})
-
-// Icono rojo (marcador modificado)
-const redIcon = L.icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
-  iconRetinaUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-})
-
+// ─── Coordenadas de respaldo por zona ───────────────────────────────────────
 const ZONE_MOCKS: Record<string, [number, number][]> = {
   'ZONA 01': [
     [-13.528, -71.962], [-13.529, -71.960], [-13.530, -71.958], [-13.531, -71.957], [-13.533, -71.956],
@@ -52,6 +35,128 @@ function getBaseCoord(zoneName: string, index: number): [number, number] {
   return mocks[Math.min(index, mocks.length - 1)]
 }
 
+// ─── Icono numerado con DivIcon ──────────────────────────────────────────────
+function createNumberedIcon(sequence: number, isDirty: boolean, isFirst: boolean, isLast: boolean) {
+  const bg = isDirty ? '#ef4444' : isFirst ? '#2563eb' : isLast ? '#1e293b' : '#3b82f6'
+  const border = isDirty ? '#b91c1c' : isFirst ? '#1d4ed8' : isLast ? '#0f172a' : '#2563eb'
+
+  return L.divIcon({
+    className: '',
+    iconAnchor: [18, 18],
+    popupAnchor: [0, -20],
+    html: `
+      <div style="
+        width: 36px; height: 36px;
+        background: ${bg};
+        border: 3px solid ${border};
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        color: white; font-weight: 800; font-size: 13px;
+        font-family: system-ui, sans-serif;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+      ">${sequence}</div>
+    `,
+  })
+}
+
+// ─── OSRM: obtener ruta por segmentos de máx 25 puntos ──────────────────────
+async function fetchOsrmSegmented(coords: [number, number][]): Promise<[number, number][]> {
+  const CHUNK = 25 // OSRM público: hasta ~25 waypoints por petición
+  const segments: [number, number][][] = []
+
+  for (let i = 0; i < coords.length - 1; i += CHUNK - 1) {
+    segments.push(coords.slice(i, i + CHUNK))
+  }
+
+  const results = await Promise.all(
+    segments.map(async (seg) => {
+      const coordsStr = seg.map(p => `${p[1]},${p[0]}`).join(';')
+      const url = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`
+      try {
+        const res = await fetch(url)
+        const data = await res.json()
+        if (data.code === 'Ok' && data.routes?.[0]) {
+          return data.routes[0].geometry.coordinates.map((c: [number, number]) => [c[1], c[0]] as [number, number])
+        }
+      } catch {}
+      // fallback: línea recta para ese segmento
+      return seg
+    })
+  )
+
+  // Unir segmentos eliminando el punto duplicado de la unión
+  return results.reduce<[number, number][]>((acc, seg, i) => {
+    return i === 0 ? acc.concat(seg) : acc.concat(seg.slice(1))
+  }, [])
+}
+
+// ─── Icono verde de búsqueda ─────────────────────────────────────────────────
+const greenSearchIcon = L.divIcon({
+  className: '',
+  iconAnchor: [18, 18],
+  popupAnchor: [0, -22],
+  html: `
+    <div style="
+      width: 36px; height: 36px;
+      background: #16a34a;
+      border: 3px solid #15803d;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 0 6px rgba(22,163,74,0.25), 0 2px 8px rgba(0,0,0,0.3);
+    ">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+        <circle cx="12" cy="10" r="3"/>
+      </svg>
+    </div>
+  `,
+})
+
+// ─── FlyTo cuando llega un resultado de búsqueda ─────────────────────────────
+function FlyToMarker({ position }: { position: [number, number] }) {
+  const map = useMap()
+  useEffect(() => {
+    map.flyTo(position, 17, { duration: 1.2 })
+  }, [map, position[0], position[1]])
+  return null
+}
+
+// ─── Clic en el mapa para añadir un punto ────────────────────────────────────
+function MapClickHandler({ isAddMode, onAdd }: { isAddMode: boolean; onAdd: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      if (isAddMode) {
+        onAdd(e.latlng.lat, e.latlng.lng)
+      }
+    },
+  })
+  return null
+}
+
+// ─── MapUpdater ──────────────────────────────────────────────────────────────
+function MapUpdater({ routeKey, positions, isFullscreen }: {
+  routeKey: string
+  positions: [number, number][]
+  isFullscreen?: boolean
+}) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (positions.length > 0) {
+      map.fitBounds(L.latLngBounds(positions), { padding: [50, 50] })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, routeKey])
+
+  useEffect(() => {
+    const timer = setTimeout(() => map.invalidateSize(), 150)
+    return () => clearTimeout(timer)
+  }, [map, isFullscreen])
+
+  return null
+}
+
+// ─── Props ───────────────────────────────────────────────────────────────────
 interface WaypointCoord {
   id: number
   sequence: number
@@ -59,19 +164,6 @@ interface WaypointCoord {
   destinationPoint: string
   lat: number
   lng: number
-  isDirty?: boolean
-}
-
-function MapUpdater({ routeKey, positions }: { routeKey: string; positions: [number, number][] }) {
-  const map = useMap()
-  useEffect(() => {
-    if (positions.length > 0) {
-      const bounds = L.latLngBounds(positions)
-      map.fitBounds(bounds, { padding: [50, 50] })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, routeKey])
-  return null
 }
 
 interface EditableMapProps {
@@ -79,33 +171,83 @@ interface EditableMapProps {
   dataset: any[]
   onCoordChange: (waypointId: number, lat: number, lng: number) => void
   dirtyIds: Set<number>
+  pendingCoords: Map<number, { lat: number; lng: number }>
+  isFullscreen?: boolean
+  searchMarker?: { lat: number; lng: number; label: string } | null
+  isAddMode?: boolean
+  onAddWaypoint?: (lat: number, lng: number) => void
+  onDeleteWaypoint?: (waypointId: number) => void
 }
 
-export default function EditableMap({ routeKey, dataset, onCoordChange, dirtyIds }: EditableMapProps) {
-  const zoneData = dataset
-    .filter((d) => {
-      if (!routeKey) return true
-      const key = `${d.zoneName || 'Sin Zona'}|${d.days.join(',')}|${d.shift}`
-      return key === routeKey
-    })
-    .sort((a, b) => a.sequence - b.sequence)
+// ─── Componente principal ────────────────────────────────────────────────────
+export default function EditableMap({
+  routeKey,
+  dataset,
+  onCoordChange,
+  dirtyIds,
+  pendingCoords,
+  isFullscreen,
+  searchMarker,
+  isAddMode = false,
+  onAddWaypoint,
+  onDeleteWaypoint,
+}: EditableMapProps) {
+  const [routeLine, setRouteLine] = useState<[number, number][]>([])
 
-  // Asignamos coordenadas: usamos lat/lng de la BD si existen, sino mocks
-  const waypoints: WaypointCoord[] = zoneData.map((d, i) => {
-    const base = getBaseCoord(d.zoneName, i)
-    const mocksLength = ZONE_MOCKS[(d.zoneName || '').toUpperCase().trim()]?.length || 10
-    const latOffset = i >= mocksLength ? (i - mocksLength) * -0.001 : 0
-    return {
-      id: d.id,
-      sequence: d.sequence,
-      originPoint: d.originPoint,
-      destinationPoint: d.destinationPoint,
-      lat: d.lat ?? base[0] + latOffset,
-      lng: d.lng ?? base[1],
+  const zoneData = useMemo(() =>
+    dataset
+      .filter((d) => {
+        if (!routeKey) return true
+        return `${d.zoneName || 'Sin Zona'}|${d.days.join(',')}|${d.shift}` === routeKey
+      })
+      .sort((a, b) => a.sequence - b.sequence),
+    [dataset, routeKey]
+  )
+
+  const waypoints: WaypointCoord[] = useMemo(() =>
+    zoneData.map((d, i) => {
+      const base = getBaseCoord(d.zoneName, i)
+      const mocksLength = ZONE_MOCKS[(d.zoneName || '').toUpperCase().trim()]?.length || 10
+      const latOffset = i >= mocksLength ? (i - mocksLength) * -0.001 : 0
+      const pending = pendingCoords.get(d.id)
+      return {
+        id: d.id,
+        sequence: d.sequence,
+        originPoint: d.originPoint,
+        destinationPoint: d.destinationPoint,
+        lat: pending ? pending.lat : (d.lat ?? base[0] + latOffset),
+        lng: pending ? pending.lng : (d.lng ?? base[1]),
+      }
+    }),
+    [zoneData, pendingCoords]
+  )
+
+  const positions = useMemo(() =>
+    waypoints.map((w) => [w.lat, w.lng] as [number, number]),
+    [waypoints]
+  )
+
+  // Stringify para evitar loop infinito en useEffect
+  const positionsString = JSON.stringify(positions)
+
+  // OSRM routing con debounce y segmentación
+  useEffect(() => {
+    if (positions.length < 2) {
+      setRouteLine(positions)
+      return
     }
-  })
 
-  const positions = waypoints.map((w) => [w.lat, w.lng] as [number, number])
+    // Línea recta inmediata mientras llega la respuesta de OSRM
+    setRouteLine(positions)
+
+    const timer = setTimeout(async () => {
+      const line = await fetchOsrmSegmented(positions)
+      setRouteLine(line)
+    }, 500)
+
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positionsString])
 
   if (waypoints.length === 0) {
     return (
@@ -115,24 +257,53 @@ export default function EditableMap({ routeKey, dataset, onCoordChange, dirtyIds
     )
   }
 
+  // Altura: 100% en fullscreen, fija de 500px en vista normal
+  const containerHeight = isFullscreen ? '100%' : '500px'
+
   return (
-    <div className="h-[500px] w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative z-0">
-      <MapContainer center={[waypoints[0].lat, waypoints[0].lng]} zoom={15} style={{ height: '100%', width: '100%' }}>
+    <div
+      style={{ height: containerHeight, cursor: isAddMode ? 'crosshair' : 'default' }}
+      className="w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative z-0"
+    >
+      {/* Banner indicador de modo añadir */}
+      {isAddMode && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[500] bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg flex items-center gap-2 pointer-events-none">
+          <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+          Modo añadir: clic en el mapa para colocar un punto
+        </div>
+      )}
+      <MapContainer
+        center={[waypoints[0].lat, waypoints[0].lng]}
+        zoom={15}
+        style={{ height: '100%', width: '100%' }}
+      >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <Polyline positions={positions} color="#3b82f6" weight={4} opacity={0.7} dashArray="8 4" />
+
+        {/* Línea de ruta por calles (OSRM) o recta como fallback */}
+        <Polyline
+          positions={routeLine.length > 1 ? routeLine : positions}
+          color="#3b82f6"
+          weight={4}
+          opacity={0.85}
+        />
+
         {waypoints.map((w, i) => (
           <Marker
             key={w.id}
             position={[w.lat, w.lng]}
-            icon={dirtyIds.has(w.id) ? redIcon : blueIcon}
+            icon={createNumberedIcon(
+              w.sequence,
+              dirtyIds.has(w.id),
+              i === 0,
+              i === waypoints.length - 1
+            )}
             draggable={true}
             eventHandlers={{
               dragend: (e) => {
-                const marker = e.target
-                const pos = marker.getLatLng()
+                const pos = (e.target as L.Marker).getLatLng()
                 onCoordChange(w.id, pos.lat, pos.lng)
               },
             }}
@@ -143,18 +314,47 @@ export default function EditableMap({ routeKey, dataset, onCoordChange, dirtyIds
                   <div className="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">
                     {w.sequence}
                   </div>
-                  <p className="font-bold text-slate-800 m-0 text-sm">Punto {w.sequence}</p>
+                  <p className="font-bold text-slate-800 m-0 text-sm">Parada {w.sequence}</p>
                 </div>
                 <p className="text-xs text-slate-600 m-0"><b>De:</b> {w.originPoint}</p>
                 <p className="text-xs text-slate-600 mt-1 m-0"><b>A:</b> {w.destinationPoint}</p>
                 {dirtyIds.has(w.id) && (
                   <p className="text-[11px] text-amber-600 font-semibold mt-2">📍 Posición modificada</p>
                 )}
+                {onDeleteWaypoint && (
+                  <button
+                    onClick={() => onDeleteWaypoint(w.id)}
+                    className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg py-1.5 transition-colors"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    Eliminar punto
+                  </button>
+                )}
               </div>
             </Popup>
           </Marker>
         ))}
-        <MapUpdater routeKey={routeKey} positions={positions} />
+
+        {/* Marcador verde de búsqueda */}
+        {searchMarker && (
+          <>
+            <FlyToMarker position={[searchMarker.lat, searchMarker.lng]} />
+            <Marker
+              position={[searchMarker.lat, searchMarker.lng]}
+              icon={greenSearchIcon}
+            >
+              <Popup>
+                <div className="font-sans min-w-[180px]">
+                  <p className="font-bold text-emerald-700 m-0 text-sm mb-1">📍 Resultado de búsqueda</p>
+                  <p className="text-xs text-slate-600 m-0">{searchMarker.label.split(',').slice(0,4).join(',')}</p>
+                </div>
+              </Popup>
+            </Marker>
+          </>
+        )}
+
+        <MapClickHandler isAddMode={isAddMode} onAdd={onAddWaypoint ?? (() => {})} />
+        <MapUpdater routeKey={routeKey} positions={positions} isFullscreen={isFullscreen} />
       </MapContainer>
     </div>
   )

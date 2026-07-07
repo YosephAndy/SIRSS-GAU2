@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { getSession, isAdmin } from '@/lib/auth'
-import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords, toggleScheduleSuspension, toggleWaypointSuspension } from '../services/schedule.service'
+import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords, toggleScheduleSuspension, toggleWaypointSuspension, addMapWaypoint, deleteMapWaypoint } from '../services/schedule.service'
 import { scheduleFormSchema } from '../schemas/schedule.schema'
 
 export async function createScheduleAction(data: z.infer<typeof scheduleFormSchema>) {
@@ -231,5 +231,43 @@ export async function toggleWaypointSuspensionAction(waypointId: number, isSuspe
       success: false,
       message: 'Ocurrió un error inesperado al actualizar el estado de la parada.',
     }
+  }
+}
+
+export async function addMapWaypointAction(data: {
+  scheduleId: number
+  lat: number
+  lng: number
+  originPoint: string
+  destinationPoint: string
+}) {
+  try {
+    const session = await getSession()
+    if (!session || !isAdmin(session)) {
+      return { success: false, message: 'No autorizado.' }
+    }
+    const waypoint = await addMapWaypoint(data)
+    revalidatePath('/admin/routes')
+    revalidatePath('/schedules')
+    return { success: true, message: 'Punto añadido correctamente.', data: waypoint }
+  } catch (error) {
+    console.error('[ADD_MAP_WAYPOINT_ERROR]:', error)
+    return { success: false, message: 'Error al añadir el punto.' }
+  }
+}
+
+export async function deleteMapWaypointAction(waypointId: number) {
+  try {
+    const session = await getSession()
+    if (!session || !isAdmin(session)) {
+      return { success: false, message: 'No autorizado.' }
+    }
+    await deleteMapWaypoint(waypointId)
+    revalidatePath('/admin/routes')
+    revalidatePath('/schedules')
+    return { success: true, message: 'Punto eliminado correctamente.' }
+  } catch (error) {
+    console.error('[DELETE_MAP_WAYPOINT_ERROR]:', error)
+    return { success: false, message: 'Error al eliminar el punto.' }
   }
 }
