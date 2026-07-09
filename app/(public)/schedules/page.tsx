@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import useSWR from 'swr'
-import { Clock, Calendar, Search, X, MapPin, Map, Truck } from 'lucide-react'
+import { Search, X, MapPin, Map } from 'lucide-react'
 import type { FlatSchedule } from '@/features/schedules/services/schedule.service'
 
 const fetcher = (url: string) => fetch(url).then((res) => {
@@ -12,13 +12,7 @@ const fetcher = (url: string) => fetch(url).then((res) => {
 
 const DAY_ORDER = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO']
 
-const ZONE_COLORS = [
-  'from-emerald-400 to-emerald-600',
-  'from-teal-400 to-teal-600',
-  'from-green-400 to-green-600',
-  'from-lime-400 to-lime-600',
-  'from-emerald-500 to-teal-500',
-]
+
 
 const SHIFT_COLORS: Record<string, string> = {
   'MANANA': 'bg-gradient-to-r from-sky-50 to-blue-50 text-sky-700 border-sky-200',
@@ -144,24 +138,7 @@ export default function SchedulesPage() {
     g.waypoints.sort((a, b) => a.sequence - b.sequence)
   })
 
-  const today = new Date()
-  const todayDayMap = [6, 0, 1, 2, 3, 4, 5]
-
-  const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-  const currentMonth = monthNames[today.getMonth()]
-  const currentYear = today.getFullYear()
-
-  const daysInMonth = new Date(currentYear, today.getMonth() + 1, 0).getDate()
-  const firstDayOfMonth = new Date(currentYear, today.getMonth(), 1).getDay()
-  const todayDate = today.getDate()
-
-  const collectionDayIndices = new Set<number>()
-  schedulesSafe.forEach(s => {
-    s.days?.forEach(d => {
-      const idx = DAY_ORDER.indexOf(d)
-      if (idx !== -1) collectionDayIndices.add(idx)
-    })
-  })
+  
 
   return (
     <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
