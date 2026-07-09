@@ -122,11 +122,18 @@ function FlyToMarker({ position }: { position: [number, number] }) {
 }
 
 // ─── Clic en el mapa para añadir un punto ────────────────────────────────────
-function MapClickHandler({ isAddMode, onAdd }: { isAddMode: boolean; onAdd: (lat: number, lng: number) => void }) {
+function MapClickHandler({ isAddMode, onAdd, isCreatingRoute, onAddCreate }: { 
+  isAddMode: boolean; 
+  onAdd: (lat: number, lng: number) => void;
+  isCreatingRoute?: boolean;
+  onAddCreate?: (lat: number, lng: number) => void;
+}) {
   useMapEvents({
     click(e) {
       if (isAddMode) {
         onAdd(e.latlng.lat, e.latlng.lng)
+      } else if (isCreatingRoute && onAddCreate) {
+        onAddCreate(e.latlng.lat, e.latlng.lng)
       }
     },
   })
@@ -177,6 +184,19 @@ interface EditableMapProps {
   isAddMode?: boolean
   onAddWaypoint?: (lat: number, lng: number) => void
   onDeleteWaypoint?: (waypointId: number) => void
+  isCreatingRoute?: boolean
+  newWaypoints?: { 
+    lat: number; 
+    lng: number; 
+    originPoint: string;
+    destinationPoint: string;
+    departureTime: string;
+    arrivalTime: string;
+    hasCampanio: boolean;
+    observations: string;
+  }[]
+  onMapClickForCreate?: (lat: number, lng: number) => void
+  setNewWaypoints?: (w: any) => void // keep for backwards compatibility with dragend
 }
 
 // ─── Componente principal ────────────────────────────────────────────────────
@@ -191,8 +211,13 @@ export default function EditableMap({
   isAddMode = false,
   onAddWaypoint,
   onDeleteWaypoint,
+  isCreatingRoute = false,
+  newWaypoints = [],
+  onMapClickForCreate,
+  setNewWaypoints,
 }: EditableMapProps) {
   const [routeLine, setRouteLine] = useState<[number, number][]>([])
+  const [useStraightLine, setUseStraightLine] = useState(false)
 
   const zoneData = useMemo(() =>
     dataset
@@ -222,10 +247,12 @@ export default function EditableMap({
     [zoneData, pendingCoords]
   )
 
-  const positions = useMemo(() =>
-    waypoints.map((w) => [w.lat, w.lng] as [number, number]),
-    [waypoints]
-  )
+  const positions = useMemo(() => {
+    if (isCreatingRoute) {
+      return newWaypoints.map((w) => [w.lat, w.lng] as [number, number])
+    }
+    return waypoints.map((w) => [w.lat, w.lng] as [number, number])
+  }, [waypoints, isCreatingRoute, newWaypoints])
 
   // Stringify para evitar loop infinito en useEffect
   const positionsString = JSON.stringify(positions)
@@ -233,6 +260,11 @@ export default function EditableMap({
   // OSRM routing con debounce y segmentación
   useEffect(() => {
     if (positions.length < 2) {
+      setRouteLine(positions)
+      return
+    }
+
+    if (useStraightLine) {
       setRouteLine(positions)
       return
     }
@@ -247,9 +279,9 @@ export default function EditableMap({
 
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positionsString])
+  }, [positionsString, useStraightLine])
 
-  if (waypoints.length === 0) {
+  if (!isCreatingRoute && waypoints.length === 0) {
     return (
       <div className="h-[500px] w-full bg-slate-100 rounded-2xl flex items-center justify-center text-slate-500">
         No hay puntos para mostrar en esta ruta.
@@ -272,6 +304,30 @@ export default function EditableMap({
           Modo añadir: clic en el mapa para colocar un punto
         </div>
       )}
+
+      {/* Toggle para línea recta vs calles */}
+      <div className="absolute top-3 right-3 z-[500]">
+        <button
+          onClick={() => setUseStraightLine(!useStraightLine)}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold shadow-md transition-colors border ${
+            useStraightLine
+              ? 'bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200'
+              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            {useStraightLine ? (
+              // Icono de línea recta
+              <><path d="M5 19L19 5"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/></>
+            ) : (
+              // Icono de curva
+              <><path d="M5 19c7 0 7-14 14-14"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/></>
+            )}
+          </svg>
+          {useStraightLine ? 'Modo Recta Activado' : 'Ajustar a Calles'}
+        </button>
+      </div>
+
       <MapContainer
         center={[waypoints[0].lat, waypoints[0].lng]}
         zoom={15}
@@ -290,7 +346,54 @@ export default function EditableMap({
           opacity={0.85}
         />
 
-        {waypoints.map((w, i) => (
+        {/* Marcadores modo creación */}
+        {isCreatingRoute && newWaypoints.map((w, i) => (
+          <Marker
+            key={`new-${i}`}
+            position={[w.lat, w.lng]}
+            icon={createNumberedIcon(i + 1, false, i === 0, i === newWaypoints.length - 1)}
+            draggable={true}
+            eventHandlers={{
+              dragend: (e) => {
+                const pos = (e.target as L.Marker).getLatLng()
+                if (setNewWaypoints) {
+                  const updated = [...newWaypoints]
+                  updated[i] = { ...updated[i], lat: pos.lat, lng: pos.lng }
+                  setNewWaypoints(updated)
+                }
+              },
+            }}
+          >
+            <Popup>
+              <div className="font-sans min-w-[180px]">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="bg-emerald-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">
+                    {i + 1}
+                  </div>
+                  <p className="font-bold text-slate-800 m-0 text-sm">Nuevo Punto {i + 1}</p>
+                </div>
+                <div className="mt-2">
+                  <p className="text-xs text-slate-600 m-0"><b>De:</b> {w.originPoint}</p>
+                  <p className="text-xs text-slate-600 mt-1 m-0"><b>A:</b> {w.destinationPoint}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (setNewWaypoints) {
+                      setNewWaypoints(newWaypoints.filter((_, idx) => idx !== i))
+                    }
+                  }}
+                  className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg py-1.5 transition-colors"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  Eliminar punto
+                </button>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+        {/* Marcadores modo edición normal */}
+        {!isCreatingRoute && waypoints.map((w, i) => (
           <Marker
             key={w.id}
             position={[w.lat, w.lng]}
@@ -353,7 +456,16 @@ export default function EditableMap({
           </>
         )}
 
-        <MapClickHandler isAddMode={isAddMode} onAdd={onAddWaypoint ?? (() => {})} />
+        <MapClickHandler 
+          isAddMode={isAddMode} 
+          onAdd={onAddWaypoint ?? (() => {})} 
+          isCreatingRoute={isCreatingRoute}
+          onAddCreate={(lat, lng) => {
+            if (onMapClickForCreate) {
+              onMapClickForCreate(lat, lng)
+            }
+          }}
+        />
         <MapUpdater routeKey={routeKey} positions={positions} isFullscreen={isFullscreen} />
       </MapContainer>
     </div>
