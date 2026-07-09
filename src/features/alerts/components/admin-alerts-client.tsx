@@ -2,12 +2,11 @@
 
 import React, { useState, useTransition } from 'react'
 import {
-  Bell, MessageSquare, Plus, Trash2, ToggleLeft, ToggleRight,
-  AlertCircle, CheckCircle2, X, Megaphone, Clock
+  Bell, Plus, Trash2,
+  AlertCircle, CheckCircle2, X, Clock
 } from 'lucide-react'
 import {
-  createAlertAction, deleteAlertAction,
-  createAnnouncementAction, toggleAnnouncementAction, deleteAnnouncementAction
+  createAlertAction, deleteAlertAction
 } from '../actions/alert.actions'
 
 function formatDate(date: Date): string {
@@ -20,33 +19,15 @@ function formatDate(date: Date): string {
   return `${day} ${month}. ${year}, ${hours}:${minutes}`
 }
 
-function formatDateShort(date: Date): string {
-  const d = new Date(date)
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][d.getMonth()]
-  const year = d.getFullYear()
-  return `${day} ${month}. ${year}`
-}
 
-type Priority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
 
 interface Alert { id: number; title: string; message: string; zona: string | null; sentAt: Date }
-interface Announcement { id: number; title: string; content: string; priority: Priority; isActive: boolean; createdAt: Date; expiresAt: Date | null; updatedAt: Date }
 
 interface AdminAlertsClientProps {
   alerts: Alert[]
-  announcements: Announcement[]
 }
 
-const PRIORITY_CONFIG: Record<Priority, { label: string; color: string }> = {
-  LOW: { label: 'Baja', color: 'bg-slate-100 text-slate-600 border-slate-200' },
-  NORMAL: { label: 'Normal', color: 'bg-blue-100 text-blue-700 border-blue-200' },
-  HIGH: { label: 'Alta', color: 'bg-amber-100 text-amber-700 border-amber-200' },
-  URGENT: { label: 'Urgente', color: 'bg-red-100 text-red-700 border-red-200' },
-}
-
-export function AdminAlertsClient({ alerts: initialAlerts, announcements: initialAnnouncements }: AdminAlertsClientProps) {
-  const [tab, setTab] = useState<'alerts' | 'announcements'>('alerts')
+export function AdminAlertsClient({ alerts: initialAlerts }: AdminAlertsClientProps) {
   const [isPending, startTransition] = useTransition()
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -56,11 +37,7 @@ export function AdminAlertsClient({ alerts: initialAlerts, announcements: initia
   const [alertZona, setAlertZona] = useState('')
   const [showAlertForm, setShowAlertForm] = useState(false)
 
-  // Announcement form state
-  const [annTitle, setAnnTitle] = useState('')
-  const [annContent, setAnnContent] = useState('')
-  const [annPriority, setAnnPriority] = useState<Priority>('NORMAL')
-  const [showAnnForm, setShowAnnForm] = useState(false)
+
 
   const showMsg = (msg: { success: boolean; message: string }) => {
     setFeedback({ type: msg.success ? 'success' : 'error', text: msg.message })
@@ -82,22 +59,7 @@ export function AdminAlertsClient({ alerts: initialAlerts, announcements: initia
     })
   }
 
-  const handleCreateAnnouncement = () => {
-    if (!annTitle.trim() || !annContent.trim()) return
-    startTransition(async () => {
-      const res = await createAnnouncementAction({ title: annTitle, content: annContent, priority: annPriority })
-      showMsg(res)
-      if (res.success) { setAnnTitle(''); setAnnContent(''); setAnnPriority('NORMAL'); setShowAnnForm(false) }
-    })
-  }
 
-  const handleToggleAnnouncement = (id: number, current: boolean) => {
-    startTransition(async () => showMsg(await toggleAnnouncementAction(id, !current)))
-  }
-
-  const handleDeleteAnnouncement = (id: number) => {
-    startTransition(async () => showMsg(await deleteAnnouncementAction(id)))
-  }
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
