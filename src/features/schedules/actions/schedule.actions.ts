@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { getSession, isAdmin } from '@/lib/auth'
-import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords, toggleScheduleSuspension, toggleWaypointSuspension, addMapWaypoint, deleteMapWaypoint } from '../services/schedule.service'
+import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords, toggleScheduleSuspension, toggleWaypointSuspension, addMapWaypoint, deleteMapWaypoint, createFullRoute, deleteFullRoute } from '../services/schedule.service'
 import { scheduleFormSchema } from '../schemas/schedule.schema'
 
 export async function createScheduleAction(data: z.infer<typeof scheduleFormSchema>) {
@@ -269,5 +269,60 @@ export async function deleteMapWaypointAction(waypointId: number) {
   } catch (error) {
     console.error('[DELETE_MAP_WAYPOINT_ERROR]:', error)
     return { success: false, message: 'Error al eliminar el punto.' }
+  }
+}
+
+export async function createFullRouteAction(data: {
+  zoneName: string
+  shift: string
+  routeType: string
+  days: string[]
+  waypoints: {
+    lat: number;
+    lng: number;
+    originPoint: string;
+    destinationPoint: string;
+    departureTime: string;
+    arrivalTime: string;
+    hasCampanio: boolean;
+    observations: string;
+  }[]
+}) {
+  try {
+    const session = await getSession()
+    if (!session || !isAdmin(session)) {
+      return { success: false, message: 'No autorizado.' }
+    }
+    
+    if (data.waypoints.length === 0) {
+      return { success: false, message: 'Debes añadir al menos un punto.' }
+    }
+
+    const result = await createFullRoute(data)
+    revalidatePath('/admin/routes')
+    revalidatePath('/schedules')
+    return { success: true, message: 'Ruta creada correctamente.' }
+  } catch (error) {
+    console.error('[CREATE_FULL_ROUTE_ERROR]:', error)
+    return { success: false, message: 'Error al crear la ruta completa.' }
+  }
+}
+
+export async function deleteFullRouteAction(scheduleId: number) {
+  try {
+    const session = await getSession()
+    if (!session || !isAdmin(session)) {
+      return { success: false, message: 'No autorizado.' }
+    }
+    if (typeof scheduleId !== 'number' || isNaN(scheduleId)) {
+      return { success: false, message: 'ID de ruta inválido.' }
+    }
+    await deleteFullRoute(scheduleId)
+    revalidatePath('/admin/routes')
+    revalidatePath('/schedules')
+    return { success: true, message: 'Ruta eliminada correctamente.' }
+  } catch (error) {
+    console.error('[DELETE_FULL_ROUTE_ERROR]:', error)
+    return { success: false, message: 'Error al eliminar la ruta.' }
   }
 }

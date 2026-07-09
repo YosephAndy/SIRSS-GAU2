@@ -400,4 +400,97 @@ export async function addMapWaypoint(data: {
  */
 export async function deleteMapWaypoint(waypointId: number) {
   return prisma.waypoint.delete({ where: { id: waypointId } })
-}
+}
+
+/**
+ * Elimina una ruta completa (Schedule + Route) a partir del scheduleId.
+ * Los waypoints se eliminan por cascada (onDelete: Cascade en el schema).
+ */
+export async function deleteFullRoute(scheduleId: number) {
+  // Buscar el routeId antes de borrar el schedule
+  const schedule = await prisma.schedule.findUnique({
+    where: { id: scheduleId },
+    select: { routeId: true },
+  })
+  if (!schedule) throw new Error('Schedule no encontrado')
+
+  // Eliminar el schedule (y sus waypoints en cascada)
+  await prisma.schedule.delete({ where: { id: scheduleId } })
+
+  // Si la route ya no tiene más schedules, eliminarla también
+  const remaining = await prisma.schedule.count({ where: { routeId: schedule.routeId } })
+  if (remaining === 0) {
+    await prisma.route.delete({ where: { id: schedule.routeId } })
+  }
+}
+
+/**
+ * Crea una ruta completa desde el mapa: Route + Schedule + múltiples Waypoints
+ */
+export async function createFullRoute(data: {
+  zoneName: string
+  shift: string
+  routeType: string
+  days: string[]
+  waypoints: { 
+    lat: number; 
+    lng: number; 
+    originPoint: string;
+    destinationPoint: string;
+    departureTime: string;
+    arrivalTime: string;
+    hasCampanio: boolean;
+    observations: string;
+  }[]
+}) {
+  return prisma.$transaction(async (tx) => {
+    // 1. Zona
+    let zone = await tx.zone.findUnique({ where: { name: data.zoneName } })
+    if (!zone) {
+      zone = await tx.zone.create({ data: { name: data.zoneName } })
+    }
+
+    // 2. Ruta
+    const route = await tx.route.create({
+      data: {
+        zoneId: zone.id,
+        shift: data.shift as any,
+        type: data.routeType as any,
+      },
+    })
+
+    // 3. Schedule
+    const schedule = await tx.schedule.create({
+      data: {
+        routeId: route.id,
+        days: data.days as any,
+      },
+    })
+
+    // 4. Waypoints
+    const createdWaypoints = []
+    for (let i = 0; i < data.waypoints.length; i++) {
+      const wp = data.waypoints[i]
+      const nextWp = data.waypoints[i + 1]
+      
+      const waypoint = await tx.waypoint.create({
+        data: {
+          scheduleId: schedule.id,
+          sequence: i + 1,
+          originPoint: wp.originPoint,
+          destinationPoint: wp.destinationPoint,
+          departureTime: wp.departureTime || null,
+          arrivalTime: wp.arrivalTime || null,
+          hasCampanio: wp.hasCampanio,
+          observations: wp.observations || null,
+          originalId: 0,
+          lat: wp.lat,
+          lng: wp.lng,
+        },
+      })
+      createdWaypoints.push(waypoint)
+    }
+
+    return { route, schedule, waypoints: createdWaypoints }
+  })
+}
