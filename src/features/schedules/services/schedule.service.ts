@@ -396,6 +396,50 @@ export async function addMapWaypoint(data: {
 }
 
 /**
+ * Inserta un punto de desvío (Via Point) invisible en la secuencia.
+ */
+export async function insertViaPoint(data: {
+  scheduleId: number
+  lat: number
+  lng: number
+  afterSequence: number
+}): Promise<FlatSchedule> {
+  return prisma.$transaction(async (tx) => {
+    // Empujar hacia adelante todos los waypoints posteriores
+    await tx.waypoint.updateMany({
+      where: {
+        scheduleId: data.scheduleId,
+        sequence: { gt: data.afterSequence },
+      },
+      data: { sequence: { increment: 1 } },
+    })
+
+    const waypoint = await tx.waypoint.create({
+      data: {
+        scheduleId: data.scheduleId,
+        sequence: data.afterSequence + 1,
+        originPoint: 'VIA_POINT',
+        destinationPoint: 'VIA_POINT',
+        lat: data.lat,
+        lng: data.lng,
+        hasCampanio: false,
+        originalId: 0,
+      },
+    })
+
+    const fullSchedule = await tx.schedule.findUnique({
+      where: { id: data.scheduleId },
+      include: {
+        route: { include: { zone: true } },
+        waypoints: { where: { id: waypoint.id } },
+      },
+    })
+
+    return waypointToFlatSchedule(waypoint, fullSchedule!)
+  })
+}
+
+/**
  * Elimina un waypoint del mapa por su ID.
  */
 export async function deleteMapWaypoint(waypointId: number) {

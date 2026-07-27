@@ -4,7 +4,7 @@ import React, { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Route, Filter, Save, CheckCircle2, AlertCircle, Info, List, ChevronDown, ChevronUp, Maximize, Minimize, Search, X, ArrowLeft, MapPin, Plus, Trash2 } from 'lucide-react'
-import { saveWaypointCoordsAction, addMapWaypointAction, deleteMapWaypointAction, createFullRouteAction, deleteFullRouteAction } from '../actions/schedule.actions'
+import { saveWaypointCoordsAction, addMapWaypointAction, deleteMapWaypointAction, createFullRouteAction, deleteFullRouteAction, insertViaPointAction } from '../actions/schedule.actions'
 import type { FlatSchedule } from '../services/schedule.service'
 
 // Cargamos el mapa dinámicamente (SSR disabled por Leaflet)
@@ -160,6 +160,24 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
       const result = await deleteMapWaypointAction(waypointId)
       setMessage({ type: result.success ? 'success' : 'error', text: result.message })
       if (result.success) router.refresh()  // refresca para reflejar el punto eliminado
+    })
+  }
+
+  const handleInsertViaPoint = (lat: number, lng: number, afterSequence: number) => {
+    if (!currentScheduleId) return
+    startTransition(async () => {
+      const result = await insertViaPointAction({
+        scheduleId: currentScheduleId,
+        lat,
+        lng,
+        afterSequence,
+      })
+      if (result.success) {
+        setMessage({ type: 'success', text: '📍 Desvío añadido.' })
+        router.refresh()
+      } else {
+        setMessage({ type: 'error', text: result.message })
+      }
     })
   }
 
@@ -352,15 +370,17 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
           if (waypoints.length === 0) return null
 
           const nodes = []
-          waypoints.forEach((w, i) => {
+          const visibleWaypoints = waypoints.filter(w => w.originPoint !== 'VIA_POINT')
+          
+          visibleWaypoints.forEach((w, i) => {
             if (i === 0) {
               nodes.push({ title: w.originPoint, isFirst: true, isLast: false })
             } else {
               nodes.push({ title: w.originPoint, isFirst: false, isLast: false })
             }
           })
-          if (waypoints.length > 0) {
-            const lastW = waypoints[waypoints.length - 1]
+          if (visibleWaypoints.length > 0) {
+            const lastW = visibleWaypoints[visibleWaypoints.length - 1]
             nodes.push({ title: lastW.destinationPoint, isFirst: false, isLast: true })
           }
 
@@ -530,6 +550,7 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
                   isAddMode={isAddMode}
                   onAddWaypoint={(lat, lng) => { handleAddWaypoint(lat, lng); setIsAddMode(false) }}
                   onDeleteWaypoint={handleDeleteWaypoint}
+                  onInsertViaPoint={handleInsertViaPoint}
                   // props para create mode
                   isCreatingRoute={isCreatingRoute}
                   newWaypoints={newWaypoints}
@@ -687,7 +708,10 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
                       <div className="relative">
                         <div className="absolute left-[19px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-blue-300 via-blue-100 to-transparent" />
                         <ul className="space-y-4 relative">
-                          {dataset.filter((s) => `${s.zoneName || 'Sin Zona'}|${s.days.join(',')}|${s.shift}` === selectedRouteKey).sort((a,b)=>a.sequence-b.sequence).map((w, i, arr) => (
+                          {dataset.filter((s) => `${s.zoneName || 'Sin Zona'}|${s.days.join(',')}|${s.shift}` === selectedRouteKey)
+                             .sort((a,b)=>a.sequence-b.sequence)
+                             .filter(w => w.originPoint !== 'VIA_POINT')
+                             .map((w, i, arr) => (
                             <li key={i} className="flex items-start gap-4">
                               <div className="w-10 h-10 rounded-full bg-white border-2 border-blue-200 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0 z-10 shadow-sm">{i + 1}</div>
                               <div className="flex-1 min-w-0 pt-1">

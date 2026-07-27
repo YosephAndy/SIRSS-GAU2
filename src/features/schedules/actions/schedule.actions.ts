@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { getSession, isAdmin } from '@/lib/auth'
-import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords, toggleScheduleSuspension, toggleWaypointSuspension, addMapWaypoint, deleteMapWaypoint, createFullRoute, deleteFullRoute } from '../services/schedule.service'
+import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords, toggleScheduleSuspension, toggleWaypointSuspension, addMapWaypoint, deleteMapWaypoint, createFullRoute, deleteFullRoute, insertViaPoint } from '../services/schedule.service'
 import { scheduleFormSchema } from '../schemas/schedule.schema'
 
 export async function createScheduleAction(data: z.infer<typeof scheduleFormSchema>) {
@@ -253,6 +253,27 @@ export async function addMapWaypointAction(data: {
   } catch (error) {
     console.error('[ADD_MAP_WAYPOINT_ERROR]:', error)
     return { success: false, message: 'Error al añadir el punto.' }
+  }
+}
+
+export async function insertViaPointAction(data: {
+  scheduleId: number
+  lat: number
+  lng: number
+  afterSequence: number
+}) {
+  try {
+    const session = await getSession()
+    if (!session || !isAdmin(session)) {
+      return { success: false, message: 'No autorizado.' }
+    }
+    const waypoint = await insertViaPoint(data)
+    revalidatePath('/admin/routes')
+    revalidatePath('/schedules')
+    return { success: true, message: 'Desvío añadido correctamente.', data: waypoint }
+  } catch (error) {
+    console.error('[INSERT_VIA_POINT_ERROR]:', error)
+    return { success: false, message: 'Error al añadir el punto de desvío.' }
   }
 }
 
