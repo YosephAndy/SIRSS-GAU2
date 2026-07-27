@@ -78,34 +78,103 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return
-    setIsSearching(true)
-    setSearchError(null)
-    setSearchResult(null)
-    try {
-      const encoded = encodeURIComponent(searchQuery)
-      const res = await fetch(
-        // viewbox: W,S,E,N del área urbana de Cusco. bounded=1 fuerza resultados dentro del recuadro.
-        `https://nominatim.openstreetmap.org/search?q=${encoded},+Cusco&format=json&limit=1&countrycodes=pe&viewbox=-72.010,-13.570,-71.900,-13.480&bounded=1`,
-        { headers: { 'Accept-Language': 'es' } }
-      )
-      const data = await res.json()
-      if (data && data.length > 0) {
-        setSearchResult({
-          lat: parseFloat(data[0].lat),
-          lng: parseFloat(data[0].lon),
-          label: data[0].display_name,
-        })
-      } else {
-        setSearchError('No se encontró la calle. Intenta con otro nombre.')
-      }
-    } catch {
-      setSearchError('Error al buscar. Verifica tu conexión.')
-    } finally {
-      setIsSearching(false)
+  const [suggestions, setSuggestions] = useState<{ lat: number; lng: number; label: string }[]>([])
+
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.length < 3) {
+      setSuggestions([])
+      return
     }
+    
+    const timeout = setTimeout(async () => {
+      setIsSearching(true)
+      setSearchError(null)
+      try {
+        const encoded = encodeURIComponent(searchQuery)
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encoded},+Cusco&format=json&limit=5&countrycodes=pe&viewbox=-72.010,-13.570,-71.900,-13.480&bounded=1`,
+          { headers: { 'Accept-Language': 'es' } }
+        )
+        const data = await res.json()
+        if (data && data.length > 0) {
+          setSuggestions(data.map((item: any) => ({
+            lat: parseFloat(item.lat),
+            lng: parseFloat(item.lon),
+            label: item.display_name
+          })))
+        } else {
+          setSuggestions([])
+          setSearchError('No se encontraron sugerencias.')
+        }
+      } catch {
+        setSearchError('Error al buscar.')
+      } finally {
+        setIsSearching(false)
+      }
+    }, 400)
+    
+    return () => clearTimeout(timeout)
+  }, [searchQuery])
+
+  const handleSelectSuggestion = (suggestion: { lat: number; lng: number; label: string }) => {
+    setSearchResult(suggestion)
+    setSuggestions([])
+    setSearchQuery(suggestion.label.split(',')[0])
   }
+
+  const searchStreetUI = (
+    <div className="px-5 py-4 border-b border-slate-100 relative">
+      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Buscar calle</p>
+      <div className="flex gap-2 relative">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Ej: Av. Tupac Amaru"
+          className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 text-slate-700"
+        />
+        {isSearching && (
+          <div className="absolute right-3 top-2.5">
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+      </div>
+      
+      {suggestions.length > 0 && (
+        <ul className="absolute left-5 right-5 top-[75px] bg-white border border-slate-200 shadow-xl rounded-lg overflow-hidden z-[500] max-h-60 overflow-y-auto">
+          {suggestions.map((s, idx) => (
+            <li key={idx}>
+              <button 
+                onClick={() => handleSelectSuggestion(s)}
+                className="w-full text-left px-4 py-2 hover:bg-blue-50 transition-colors border-b border-slate-100 last:border-0 flex items-start gap-2"
+              >
+                <MapPin size={14} className="text-slate-400 mt-1 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-700 truncate">{s.label.split(',')[0]}</p>
+                  <p className="text-xs text-slate-500 truncate">{s.label}</p>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      
+      {searchError && suggestions.length === 0 && searchQuery.length > 2 && (
+        <p className="text-xs text-red-500 mt-2">{searchError}</p>
+      )}
+
+      {searchResult && (
+        <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-start gap-2">
+          <MapPin size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-emerald-700 font-semibold">Marcado en el mapa</p>
+            <p className="text-[11px] text-emerald-600 truncate">{searchResult.label.split(',')[0]}</p>
+          </div>
+          <button onClick={() => { setSearchResult(null); setSearchQuery('') }} className="text-emerald-500 hover:text-emerald-700 shrink-0"><X size={14} /></button>
+        </div>
+      )}
+    </div>
+  )
 
   const [isAddMode, setIsAddMode] = useState(false)
 
@@ -593,8 +662,10 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
 
                 {isCreatingRoute ? (
                   // Formulario de creación
-                  <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                    <div>
+                  <>
+                    {searchStreetUI}
+                    <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                      <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Zona</label>
                       <input 
                         type="text" 
@@ -673,35 +744,11 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
                       </div>
                     </div>
                   </div>
+                  </>
                 ) : (
                   // Normal Sidebar
                   <>
-                    <div className="px-5 py-4 border-b border-slate-100">
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Buscar calle</p>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                          placeholder="Ej: Av. Tupac Amaru"
-                          className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 text-slate-700"
-                        />
-                        <button onClick={handleSearch} disabled={isSearching} className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shrink-0">
-                          {isSearching ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Search size={16} />}
-                        </button>
-                      </div>
-                      {searchResult && (
-                        <div className="mt-2 bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-start gap-2">
-                          <MapPin size={14} className="text-emerald-600 shrink-0 mt-0.5" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs text-emerald-700 font-semibold">¡Encontrado!</p>
-                            <p className="text-[11px] text-emerald-600 truncate">{searchResult.label.split(',')[0]}</p>
-                          </div>
-                          <button onClick={() => { setSearchResult(null); setSearchQuery('') }} className="text-emerald-500 hover:text-emerald-700 shrink-0"><X size={14} /></button>
-                        </div>
-                      )}
-                    </div>
+                    {searchStreetUI}
 
                     <div className="flex-1 overflow-y-auto p-5">
                       <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Secuencia</p>
