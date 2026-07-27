@@ -1,0 +1,81 @@
+# ============================================================
+# pr-check.yml — Verificación automática en Pull Requests
+# Trabajo Extra: se ejecuta cuando se abre o actualiza un PR.
+# ============================================================
+
+name: PR Check — Verificación de Pull Request
+
+# Evento disparador: apertura, sincronización o reapertura de PR
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    types:
+      - opened        # cuando se crea el PR
+      - synchronize   # cuando se hace push a la rama del PR
+      - reopened      # cuando se reactiva un PR cerrado
+
+jobs:
+  pr-validation:
+    name: 🔎 Validación de PR
+    runs-on: ubuntu-latest
+
+    steps:
+      # ----------------------------------------------------------
+      # 1. Descargar el código del PR (rama de origen)
+      # ----------------------------------------------------------
+      - name: 📥 Checkout del código del PR
+        uses: actions/checkout@v4
+        with:
+          # Descarga el código de la rama del PR (no de main)
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # ----------------------------------------------------------
+      # 2. Instalar Node.js
+      # ----------------------------------------------------------
+      - name: 🟢 Configurar Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # ----------------------------------------------------------
+      # 3. Instalar dependencias
+      # ----------------------------------------------------------
+      - name: 📦 Instalar dependencias (npm install)
+        run: npm install
+
+      # ----------------------------------------------------------
+      # 4. Verificar tipado TypeScript
+      # ----------------------------------------------------------
+      - name: 🔍 Verificar tipos TypeScript
+        run: npx tsc --noEmit
+
+      # ----------------------------------------------------------
+      # 5. Linter — detecta errores de código antes del merge
+      # ----------------------------------------------------------
+      - name: 🧹 Ejecutar ESLint
+        run: npm run lint
+
+      # ----------------------------------------------------------
+      # 6. Pruebas unitarias con coverage
+      # ----------------------------------------------------------
+      - name: 🧪 Ejecutar pruebas unitarias
+        run: npm test -- --ci --coverage
+
+      # ----------------------------------------------------------
+      # 7. Resumen del PR
+      # ----------------------------------------------------------
+      - name: 📊 Resumen de validación del PR
+        if: always()
+        run: |
+          echo "============================================"
+          echo "  PR Check completado"
+          echo "  PR #   : ${{ github.event.pull_request.number }}"
+          echo "  Título : ${{ github.event.pull_request.title }}"
+          echo "  Autor  : ${{ github.event.pull_request.user.login }}"
+          echo "  Base   : ${{ github.base_ref }}"
+          echo "  Head   : ${{ github.head_ref }}"
+          echo "  Fecha  : $(date)"
+          echo "============================================"

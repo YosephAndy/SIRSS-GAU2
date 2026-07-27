@@ -4,7 +4,7 @@ import React, { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Route, Filter, Save, CheckCircle2, AlertCircle, Info, List, ChevronDown, ChevronUp, Maximize, Minimize, Search, X, ArrowLeft, MapPin, Plus, Trash2 } from 'lucide-react'
-import { saveWaypointCoordsAction, addMapWaypointAction, deleteMapWaypointAction, createFullRouteAction, deleteFullRouteAction } from '../actions/schedule.actions'
+import { saveWaypointCoordsAction, addMapWaypointAction, deleteMapWaypointAction, createFullRouteAction, deleteFullRouteAction, insertViaPointAction } from '../actions/schedule.actions'
 import type { FlatSchedule } from '../services/schedule.service'
 
 // Cargamos el mapa dinámicamente (SSR disabled por Leaflet)
@@ -78,34 +78,103 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return
-    setIsSearching(true)
-    setSearchError(null)
-    setSearchResult(null)
-    try {
-      const encoded = encodeURIComponent(searchQuery)
-      const res = await fetch(
-        // viewbox: W,S,E,N del área urbana de Cusco. bounded=1 fuerza resultados dentro del recuadro.
-        `https://nominatim.openstreetmap.org/search?q=${encoded},+Cusco&format=json&limit=1&countrycodes=pe&viewbox=-72.010,-13.570,-71.900,-13.480&bounded=1`,
-        { headers: { 'Accept-Language': 'es' } }
-      )
-      const data = await res.json()
-      if (data && data.length > 0) {
-        setSearchResult({
-          lat: parseFloat(data[0].lat),
-          lng: parseFloat(data[0].lon),
-          label: data[0].display_name,
-        })
-      } else {
-        setSearchError('No se encontró la calle. Intenta con otro nombre.')
-      }
-    } catch {
-      setSearchError('Error al buscar. Verifica tu conexión.')
-    } finally {
-      setIsSearching(false)
+  const [suggestions, setSuggestions] = useState<{ lat: number; lng: number; label: string }[]>([])
+
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.length < 3) {
+      setSuggestions([])
+      return
     }
+    
+    const timeout = setTimeout(async () => {
+      setIsSearching(true)
+      setSearchError(null)
+      try {
+        const encoded = encodeURIComponent(searchQuery)
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encoded},+Cusco&format=json&limit=5&countrycodes=pe&viewbox=-72.010,-13.570,-71.900,-13.480&bounded=1`,
+          { headers: { 'Accept-Language': 'es' } }
+        )
+        const data = await res.json()
+        if (data && data.length > 0) {
+          setSuggestions(data.map((item: any) => ({
+            lat: parseFloat(item.lat),
+            lng: parseFloat(item.lon),
+            label: item.display_name
+          })))
+        } else {
+          setSuggestions([])
+          setSearchError('No se encontraron sugerencias.')
+        }
+      } catch {
+        setSearchError('Error al buscar.')
+      } finally {
+        setIsSearching(false)
+      }
+    }, 400)
+    
+    return () => clearTimeout(timeout)
+  }, [searchQuery])
+
+  const handleSelectSuggestion = (suggestion: { lat: number; lng: number; label: string }) => {
+    setSearchResult(suggestion)
+    setSuggestions([])
+    setSearchQuery(suggestion.label.split(',')[0])
   }
+
+  const searchStreetUI = (
+    <div className="px-5 py-4 border-b border-slate-100 relative">
+      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Buscar calle</p>
+      <div className="flex gap-2 relative">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Ej: Av. Tupac Amaru"
+          className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 text-slate-700"
+        />
+        {isSearching && (
+          <div className="absolute right-3 top-2.5">
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+      </div>
+      
+      {suggestions.length > 0 && (
+        <ul className="absolute left-5 right-5 top-[75px] bg-white border border-slate-200 shadow-xl rounded-lg overflow-hidden z-[500] max-h-60 overflow-y-auto">
+          {suggestions.map((s, idx) => (
+            <li key={idx}>
+              <button 
+                onClick={() => handleSelectSuggestion(s)}
+                className="w-full text-left px-4 py-2 hover:bg-blue-50 transition-colors border-b border-slate-100 last:border-0 flex items-start gap-2"
+              >
+                <MapPin size={14} className="text-slate-400 mt-1 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-700 truncate">{s.label.split(',')[0]}</p>
+                  <p className="text-xs text-slate-500 truncate">{s.label}</p>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      
+      {searchError && suggestions.length === 0 && searchQuery.length > 2 && (
+        <p className="text-xs text-red-500 mt-2">{searchError}</p>
+      )}
+
+      {searchResult && (
+        <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-start gap-2">
+          <MapPin size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-emerald-700 font-semibold">Marcado en el mapa</p>
+            <p className="text-[11px] text-emerald-600 truncate">{searchResult.label.split(',')[0]}</p>
+          </div>
+          <button onClick={() => { setSearchResult(null); setSearchQuery('') }} className="text-emerald-500 hover:text-emerald-700 shrink-0"><X size={14} /></button>
+        </div>
+      )}
+    </div>
+  )
 
   const [isAddMode, setIsAddMode] = useState(false)
 
@@ -160,6 +229,24 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
       const result = await deleteMapWaypointAction(waypointId)
       setMessage({ type: result.success ? 'success' : 'error', text: result.message })
       if (result.success) router.refresh()  // refresca para reflejar el punto eliminado
+    })
+  }
+
+  const handleInsertViaPoint = (lat: number, lng: number, afterSequence: number) => {
+    if (!currentScheduleId) return
+    startTransition(async () => {
+      const result = await insertViaPointAction({
+        scheduleId: currentScheduleId,
+        lat,
+        lng,
+        afterSequence,
+      })
+      if (result.success) {
+        setMessage({ type: 'success', text: '📍 Desvío añadido.' })
+        router.refresh()
+      } else {
+        setMessage({ type: 'error', text: result.message })
+      }
     })
   }
 
@@ -352,15 +439,17 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
           if (waypoints.length === 0) return null
 
           const nodes = []
-          waypoints.forEach((w, i) => {
+          const visibleWaypoints = waypoints.filter(w => w.originPoint !== 'VIA_POINT')
+          
+          visibleWaypoints.forEach((w, i) => {
             if (i === 0) {
               nodes.push({ title: w.originPoint, isFirst: true, isLast: false })
             } else {
               nodes.push({ title: w.originPoint, isFirst: false, isLast: false })
             }
           })
-          if (waypoints.length > 0) {
-            const lastW = waypoints[waypoints.length - 1]
+          if (visibleWaypoints.length > 0) {
+            const lastW = visibleWaypoints[visibleWaypoints.length - 1]
             nodes.push({ title: lastW.destinationPoint, isFirst: false, isLast: true })
           }
 
@@ -530,6 +619,7 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
                   isAddMode={isAddMode}
                   onAddWaypoint={(lat, lng) => { handleAddWaypoint(lat, lng); setIsAddMode(false) }}
                   onDeleteWaypoint={handleDeleteWaypoint}
+                  onInsertViaPoint={handleInsertViaPoint}
                   // props para create mode
                   isCreatingRoute={isCreatingRoute}
                   newWaypoints={newWaypoints}
@@ -572,8 +662,10 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
 
                 {isCreatingRoute ? (
                   // Formulario de creación
-                  <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                    <div>
+                  <>
+                    {searchStreetUI}
+                    <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                      <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Zona</label>
                       <input 
                         type="text" 
@@ -652,42 +744,21 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
                       </div>
                     </div>
                   </div>
+                  </>
                 ) : (
                   // Normal Sidebar
                   <>
-                    <div className="px-5 py-4 border-b border-slate-100">
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Buscar calle</p>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                          placeholder="Ej: Av. Tupac Amaru"
-                          className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 text-slate-700"
-                        />
-                        <button onClick={handleSearch} disabled={isSearching} className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shrink-0">
-                          {isSearching ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Search size={16} />}
-                        </button>
-                      </div>
-                      {searchResult && (
-                        <div className="mt-2 bg-emerald-50 border border-emerald-200 rounded-lg p-2 flex items-start gap-2">
-                          <MapPin size={14} className="text-emerald-600 shrink-0 mt-0.5" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs text-emerald-700 font-semibold">¡Encontrado!</p>
-                            <p className="text-[11px] text-emerald-600 truncate">{searchResult.label.split(',')[0]}</p>
-                          </div>
-                          <button onClick={() => { setSearchResult(null); setSearchQuery('') }} className="text-emerald-500 hover:text-emerald-700 shrink-0"><X size={14} /></button>
-                        </div>
-                      )}
-                    </div>
+                    {searchStreetUI}
 
                     <div className="flex-1 overflow-y-auto p-5">
                       <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Secuencia</p>
                       <div className="relative">
                         <div className="absolute left-[19px] top-0 bottom-0 w-0.5 bg-gradient-to-b from-blue-300 via-blue-100 to-transparent" />
                         <ul className="space-y-4 relative">
-                          {dataset.filter((s) => `${s.zoneName || 'Sin Zona'}|${s.days.join(',')}|${s.shift}` === selectedRouteKey).sort((a,b)=>a.sequence-b.sequence).map((w, i, arr) => (
+                          {dataset.filter((s) => `${s.zoneName || 'Sin Zona'}|${s.days.join(',')}|${s.shift}` === selectedRouteKey)
+                             .sort((a,b)=>a.sequence-b.sequence)
+                             .filter(w => w.originPoint !== 'VIA_POINT')
+                             .map((w, i, arr) => (
                             <li key={i} className="flex items-start gap-4">
                               <div className="w-10 h-10 rounded-full bg-white border-2 border-blue-200 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0 z-10 shadow-sm">{i + 1}</div>
                               <div className="flex-1 min-w-0 pt-1">

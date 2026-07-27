@@ -59,6 +59,24 @@ function createNumberedIcon(sequence: number, isDirty: boolean, isFirst: boolean
   })
 }
 
+// ─── Icono de Punto de Desvío (Via Point) ────────────────────────────────────
+function createViaPointIcon() {
+  return L.divIcon({
+    className: '',
+    iconAnchor: [8, 8],
+    popupAnchor: [0, -10],
+    html: `
+      <div style="
+        width: 16px; height: 16px;
+        background: #ffffff;
+        border: 3px solid #94a3b8;
+        border-radius: 50%;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+      "></div>
+    `,
+  })
+}
+
 // ─── OSRM: obtener ruta por segmentos de máx 25 puntos ──────────────────────
 async function fetchOsrmSegmented(coords: [number, number][]): Promise<[number, number][]> {
   const CHUNK = 25 // OSRM público: hasta ~25 waypoints por petición
@@ -121,15 +139,63 @@ function FlyToMarker({ position }: { position: [number, number] }) {
   return null
 }
 
+// ─── DragController (para arrastrar la línea entera) ─────────────────────────
+function DragController({ 
+  draggingId,
+  setDraggingId,
+  setDraggingCoord,
+  onCoordChange,
+  lastDragEndRef
+}: {
+  draggingId: number | null
+  setDraggingId: (id: number | null) => void
+  setDraggingCoord: (coord: { lat: number, lng: number } | null) => void
+  onCoordChange: (id: number, lat: number, lng: number) => void
+  lastDragEndRef?: React.MutableRefObject<number>
+}) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (draggingId !== null) {
+      map.dragging.disable();
+    } else {
+      map.dragging.enable();
+    }
+  }, [draggingId, map]);
+
+  useMapEvents({
+    mousemove(e) {
+      if (draggingId !== null) {
+        setDraggingCoord(e.latlng)
+      }
+    },
+    mouseup(e) {
+      if (draggingId !== null) {
+        onCoordChange(draggingId, e.latlng.lat, e.latlng.lng)
+        setDraggingId(null)
+        setDraggingCoord(null)
+        if (lastDragEndRef) {
+          lastDragEndRef.current = Date.now()
+        }
+      }
+    }
+  })
+  return null
+}
+
 // ─── Clic en el mapa para añadir un punto ────────────────────────────────────
-function MapClickHandler({ isAddMode, onAdd, isCreatingRoute, onAddCreate }: { 
+function MapClickHandler({ isAddMode, onAdd, isCreatingRoute, onAddCreate, lastDragEndRef }: { 
   isAddMode: boolean; 
   onAdd: (lat: number, lng: number) => void;
   isCreatingRoute?: boolean;
   onAddCreate?: (lat: number, lng: number) => void;
+  lastDragEndRef?: React.MutableRefObject<number>;
 }) {
   useMapEvents({
     click(e) {
+      if (lastDragEndRef && Date.now() - lastDragEndRef.current < 300) {
+        return; // Ignorar clics inmediatamente despues de arrastrar
+      }
       if (isAddMode) {
         onAdd(e.latlng.lat, e.latlng.lng)
       } else if (isCreatingRoute && onAddCreate) {
@@ -184,6 +250,7 @@ interface EditableMapProps {
   isAddMode?: boolean
   onAddWaypoint?: (lat: number, lng: number) => void
   onDeleteWaypoint?: (waypointId: number) => void
+  onInsertViaPoint?: (lat: number, lng: number, afterSequence: number) => void
   isCreatingRoute?: boolean
   newWaypoints?: { 
     lat: number; 
@@ -211,6 +278,7 @@ export default function EditableMap({
   isAddMode = false,
   onAddWaypoint,
   onDeleteWaypoint,
+  onInsertViaPoint,
   isCreatingRoute = false,
   newWaypoints = [],
   onMapClickForCreate,
@@ -218,6 +286,10 @@ export default function EditableMap({
 }: EditableMapProps) {
   const [routeLine, setRouteLine] = useState<[number, number][]>([])
   const [useStraightLine, setUseStraightLine] = useState(false)
+  
+  const [draggingViaPoint, setDraggingViaPoint] = useState<{ indexToInsert: number, lat: number, lng: number, afterSequence: number } | null>(null)
+  
+  const lastDragEndRef = React.useRef<number>(0)
 
   const zoneData = useMemo(() =>
     dataset
@@ -235,6 +307,7 @@ export default function EditableMap({
       const mocksLength = ZONE_MOCKS[(d.zoneName || '').toUpperCase().trim()]?.length || 10
       const latOffset = i >= mocksLength ? (i - mocksLength) * -0.001 : 0
       const pending = pendingCoords.get(d.id)
+      
       return {
         id: d.id,
         sequence: d.sequence,
@@ -248,11 +321,20 @@ export default function EditableMap({
   )
 
   const positions = useMemo(() => {
+    let basePositions: [number, number][] = []
+    
     if (isCreatingRoute) {
-      return newWaypoints.map((w) => [w.lat, w.lng] as [number, number])
+      basePositions = newWaypoints.map((w) => [w.lat, w.lng] as [number, number])
+    } else {
+      basePositions = waypoints.map((w) => [w.lat, w.lng] as [number, number])
     }
-    return waypoints.map((w) => [w.lat, w.lng] as [number, number])
-  }, [waypoints, isCreatingRoute, newWaypoints])
+
+    if (draggingViaPoint) {
+       basePositions.splice(draggingViaPoint.indexToInsert, 0, [draggingViaPoint.lat, draggingViaPoint.lng])
+    }
+    
+    return basePositions
+  }, [waypoints, isCreatingRoute, newWaypoints, draggingViaPoint])
 
   // Stringify para evitar loop infinito en useEffect
   const positionsString = JSON.stringify(positions)
@@ -341,18 +423,61 @@ export default function EditableMap({
         {/* Línea de ruta por calles (OSRM) o recta como fallback */}
         <Polyline
           positions={routeLine.length > 1 ? routeLine : positions}
-          color="#3b82f6"
-          weight={4}
+          color={draggingViaPoint !== null ? "#ef4444" : "#3b82f6"}
+          weight={draggingViaPoint !== null ? 6 : 4}
           opacity={0.85}
+          eventHandlers={{
+            mousedown: (e) => {
+              if (isAddMode) return;
+              
+              const currentPoints = isCreatingRoute ? newWaypoints : waypoints;
+              if (currentPoints.length < 2) return;
+              
+              L.DomEvent.stopPropagation(e.originalEvent);
+              
+              const map = (e as L.LeafletMouseEvent).target._map;
+              const p = map.latLngToLayerPoint(e.latlng);
+              let closestSegmentIndex = 0;
+              let minDist = Infinity;
+              
+              for (let i = 0; i < currentPoints.length - 1; i++) {
+                const w1 = currentPoints[i];
+                const w2 = currentPoints[i+1];
+                const p1 = map.latLngToLayerPoint(L.latLng(w1.lat, w1.lng));
+                const p2 = map.latLngToLayerPoint(L.latLng(w2.lat, w2.lng));
+                const dist = L.LineUtil.pointToSegmentDistance(p, p1, p2);
+                
+                if (dist < minDist) {
+                  minDist = dist;
+                  closestSegmentIndex = i;
+                }
+              }
+              
+              setDraggingViaPoint({
+                indexToInsert: closestSegmentIndex + 1,
+                lat: e.latlng.lat,
+                lng: e.latlng.lng,
+                afterSequence: isCreatingRoute ? 0 : (currentPoints[closestSegmentIndex] as WaypointCoord).sequence
+              });
+            }
+          }}
         />
 
         {/* Marcadores modo creación */}
-        {isCreatingRoute && newWaypoints.map((w, i) => (
-          <Marker
-            key={`new-${i}`}
-            position={[w.lat, w.lng]}
-            icon={createNumberedIcon(i + 1, false, i === 0, i === newWaypoints.length - 1)}
-            draggable={true}
+        {isCreatingRoute && (() => {
+          let displayNumber = 0;
+          return newWaypoints.map((w, i) => {
+            const isVia = w.originPoint === 'VIA_POINT';
+            if (!isVia) displayNumber++;
+            
+            return (
+              <Marker
+                key={`new-${i}`}
+                position={[w.lat, w.lng]}
+                icon={isVia 
+                  ? createViaPointIcon() 
+                  : createNumberedIcon(displayNumber, false, i === 0, i === newWaypoints.length - 1)}
+                draggable={true}
             eventHandlers={{
               dragend: (e) => {
                 const pos = (e.target as L.Marker).getLatLng()
@@ -376,34 +501,45 @@ export default function EditableMap({
                   <p className="text-xs text-slate-600 m-0"><b>De:</b> {w.originPoint}</p>
                   <p className="text-xs text-slate-600 mt-1 m-0"><b>A:</b> {w.destinationPoint}</p>
                 </div>
-                <button
-                  onClick={() => {
-                    if (setNewWaypoints) {
-                      setNewWaypoints(newWaypoints.filter((_, idx) => idx !== i))
-                    }
-                  }}
-                  className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg py-1.5 transition-colors"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                  Eliminar punto
-                </button>
+                {!isVia && (
+                  <button
+                    onClick={() => {
+                      if (setNewWaypoints) {
+                        setNewWaypoints(newWaypoints.filter((_, idx) => idx !== i))
+                      }
+                    }}
+                    className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg py-1.5 transition-colors"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    Eliminar punto
+                  </button>
+                )}
               </div>
             </Popup>
           </Marker>
-        ))}
+        )
+      })})()}
 
         {/* Marcadores modo edición normal */}
-        {!isCreatingRoute && waypoints.map((w, i) => (
-          <Marker
-            key={w.id}
-            position={[w.lat, w.lng]}
-            icon={createNumberedIcon(
-              w.sequence,
-              dirtyIds.has(w.id),
-              i === 0,
-              i === waypoints.length - 1
-            )}
-            draggable={true}
+        {!isCreatingRoute && (() => {
+          let displayNumber = 0;
+          return waypoints.map((w, i) => {
+            const isVia = w.originPoint === 'VIA_POINT';
+            if (!isVia) displayNumber++;
+            
+            return (
+              <Marker
+                key={w.id}
+                position={[w.lat, w.lng]}
+                icon={isVia 
+                  ? createViaPointIcon() 
+                  : createNumberedIcon(
+                      displayNumber,
+                      dirtyIds.has(w.id),
+                      i === 0,
+                      i === waypoints.length - 1
+                    )}
+                draggable={true}
             eventHandlers={{
               dragend: (e) => {
                 const pos = (e.target as L.Marker).getLatLng()
@@ -421,10 +557,10 @@ export default function EditableMap({
                 </div>
                 <p className="text-xs text-slate-600 m-0"><b>De:</b> {w.originPoint}</p>
                 <p className="text-xs text-slate-600 mt-1 m-0"><b>A:</b> {w.destinationPoint}</p>
-                {dirtyIds.has(w.id) && (
+                {dirtyIds.has(w.id) && !isVia && (
                   <p className="text-[11px] text-amber-600 font-semibold mt-2">📍 Posición modificada</p>
                 )}
-                {onDeleteWaypoint && (
+                {onDeleteWaypoint && !isVia && (
                   <button
                     onClick={() => onDeleteWaypoint(w.id)}
                     className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg py-1.5 transition-colors"
@@ -436,7 +572,8 @@ export default function EditableMap({
               </div>
             </Popup>
           </Marker>
-        ))}
+        )
+      })})()}
 
         {/* Marcador verde de búsqueda */}
         {searchMarker && (
@@ -462,9 +599,34 @@ export default function EditableMap({
           isCreatingRoute={isCreatingRoute}
           onAddCreate={(lat, lng) => {
             if (onMapClickForCreate) {
-              onMapClickForCreate(lat, lng)
+               onMapClickForCreate(lat, lng)
             }
           }}
+          lastDragEndRef={lastDragEndRef}
+        />
+        <DragController 
+          draggingId={draggingViaPoint ? 1 : null} 
+          setDraggingId={(v) => { if (v === null) setDraggingViaPoint(null) }} 
+          setDraggingCoord={(coord) => {
+            if (coord && draggingViaPoint) {
+               setDraggingViaPoint({ ...draggingViaPoint, lat: coord.lat, lng: coord.lng })
+            }
+          }} 
+          onCoordChange={(id, lat, lng) => {
+            if (draggingViaPoint) {
+               if (isCreatingRoute && setNewWaypoints) {
+                  const updated = [...newWaypoints]
+                  updated.splice(draggingViaPoint.indexToInsert, 0, {
+                     lat, lng, originPoint: 'VIA_POINT', destinationPoint: 'VIA_POINT',
+                     departureTime: '06:00', arrivalTime: '06:30', hasCampanio: false, observations: ''
+                  })
+                  setNewWaypoints(updated)
+               } else if (onInsertViaPoint) {
+                  onInsertViaPoint(lat, lng, draggingViaPoint.afterSequence)
+               }
+            }
+          }} 
+          lastDragEndRef={lastDragEndRef}
         />
         <MapUpdater routeKey={routeKey} positions={positions} isFullscreen={isFullscreen} />
       </MapContainer>
