@@ -138,6 +138,8 @@ model Schedule {
   zoneName      String?
   isSuspended   Boolean   @default(false)
   useStraightLine Boolean @default(false)
+  isSimulating        Boolean   @default(false)
+  simulationStartTime DateTime?
   waypoints     Waypoint[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

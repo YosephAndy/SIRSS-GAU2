@@ -41,6 +41,17 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [showSequence, setShowSequence] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  // Estado local de simulación para reflejar cambios instantáneamente
+  const [simulatingIds, setSimulatingIds] = useState<Map<number, Date>>(() => {
+    const m = new Map<number, Date>()
+    dataset.forEach(d => {
+      if (d.isSimulating && d.simulationStartTime) {
+        m.set(d.scheduleId, new Date(d.simulationStartTime))
+      }
+    })
+    return m
+  })
+
 
   // Creation Mode State
   const [isCreatingRoute, setIsCreatingRoute] = useState(false)
@@ -183,16 +194,33 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
   const currentRoute = uniqueRoutes.find((r) => r.key === selectedRouteKey)
   const currentScheduleId = currentRoute?.scheduleId ?? null
 
-  const handleToggleSimulation = async (scheduleId: number, isSimulating: boolean) => {
+  const handleToggleSimulation = async (scheduleId: number, newIsSimulating: boolean) => {
+    // Actualizar estado local de inmediato (optimistic update)
+    setSimulatingIds(prev => {
+      const next = new Map(prev)
+      if (newIsSimulating) {
+        next.set(scheduleId, new Date())
+      } else {
+        next.delete(scheduleId)
+      }
+      return next
+    })
+
     startTransition(async () => {
-      const res = await toggleSimulationAction(scheduleId, !isSimulating)
+      const res = await toggleSimulationAction(scheduleId, newIsSimulating)
       if (!res.success) {
         setMessage({ type: 'error', text: res.message })
-      } else {
-        router.refresh()
+        // Revertir estado local si falló
+        setSimulatingIds(prev => {
+          const next = new Map(prev)
+          if (newIsSimulating) next.delete(scheduleId)
+          else next.set(scheduleId, new Date())
+          return next
+        })
       }
     })
   }
+
 
   // Resetear cambios al cambiar de ruta
   useEffect(() => {
@@ -405,29 +433,13 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
             )}
             {/* Botón eliminar ruta (solo en modo selección con ruta activa) */}
             {!isCreatingRoute && currentRoute && (
-              <>
-                <button
-                  onClick={() => handleToggleSimulation(currentRoute.scheduleId, !currentRoute.isSimulating)}
-                  className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-colors border shadow-sm ${
-                    currentRoute.isSimulating 
-                    ? 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
-                    : 'border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                  }`}
-                >
-                  {currentRoute.isSimulating ? (
-                    <><Square size={16} /> Detener Simulación</>
-                  ) : (
-                    <><Play size={16} /> Simular Recorrido</>
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowDeleteConfirm(true)}
-                  className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-colors border border-red-200 bg-white text-red-600 hover:bg-red-50 shadow-sm"
-                >
-                  <Trash2 size={16} />
-                  Eliminar Ruta
-                </button>
-              </>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-colors border border-red-200 bg-white text-red-600 hover:bg-red-50 shadow-sm"
+              >
+                <Trash2 size={16} />
+                Eliminar Ruta
+              </button>
             )}
             <button
               onClick={() => {
@@ -631,7 +643,11 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
               <div className={isFullscreen ? 'flex-1' : 'min-h-[500px]'}>
                 <EditableMapComponent
                   routeKey={selectedRouteKey}
-                  dataset={dataset}
+                  dataset={dataset.map(d => ({
+                    ...d,
+                    isSimulating: simulatingIds.has(d.scheduleId),
+                    simulationStartTime: simulatingIds.get(d.scheduleId) ?? null,
+                  }))}
                   onCoordChange={handleCoordChange}
                   dirtyIds={dirtyIds}
                   pendingCoords={pendingCoords}
@@ -809,14 +825,38 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
                       {isPending ? 'Creando...' : 'Guardar Nueva Ruta'}
                     </button>
                   ) : (
-                    <button
-                      onClick={handleSave}
-                      disabled={isPending || dirtyIds.size === 0}
-                      className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-3 rounded-xl transition-colors shadow-sm disabled:opacity-60"
-                    >
-                      <Save size={18} />
-                      {isPending ? 'Guardando...' : `Guardar ${dirtyIds.size} cambios`}
-                    </button>
+                    <div className="flex flex-col gap-3">
+                      {currentRoute && (() => {
+                          const schedId = currentRoute.scheduleId
+                          const localSimulating = simulatingIds.has(schedId)
+                          const localStartTime = simulatingIds.get(schedId)
+                          return (
+                            <button
+                              onClick={() => handleToggleSimulation(schedId, !localSimulating)}
+                              className={`w-full flex items-center justify-center gap-2 font-bold px-5 py-3 rounded-xl transition-colors shadow-sm ${
+                                localSimulating
+                                ? 'bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200'
+                                : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200'
+                              }`}
+                            >
+                              {localSimulating ? (
+                                <><Square size={18} /> Detener Simulación</>
+                              ) : (
+                                <><Play size={18} /> Iniciar Simulación</>
+                              )}
+                            </button>
+                          )
+                        })()
+                      }
+                      <button
+                        onClick={handleSave}
+                        disabled={isPending || dirtyIds.size === 0}
+                        className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-3 rounded-xl transition-colors shadow-sm disabled:opacity-60"
+                      >
+                        <Save size={18} />
+                        {isPending ? 'Guardando...' : `Guardar ${dirtyIds.size} cambios`}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

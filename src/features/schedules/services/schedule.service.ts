@@ -25,6 +25,8 @@ export type FlatSchedule = {
   lng: number | null
   isSuspended: boolean
   isWaypointSuspended: boolean
+  isSimulating: boolean
+  simulationStartTime: Date | null
 }
 
 function waypointToFlatSchedule(
@@ -49,6 +51,8 @@ function waypointToFlatSchedule(
     departureTime: string | null
     arrivalTime: string | null
     isSuspended: boolean
+    isSimulating: boolean
+    simulationStartTime: Date | null
     route: {
       id: number
       zoneId: number | null
@@ -82,6 +86,8 @@ function waypointToFlatSchedule(
     lng: waypoint.lng ?? null,
     isSuspended: schedule.isSuspended,
     isWaypointSuspended: waypoint.isSuspended,
+    isSimulating: schedule.isSimulating,
+    simulationStartTime: schedule.simulationStartTime,
   }
 }
 
@@ -536,5 +542,15 @@ export async function createFullRoute(data: {
     }
 
     return { route, schedule, waypoints: createdWaypoints }
+  })
+}
+
+export async function toggleSimulation(scheduleId: number, isSimulating: boolean) {
+  return await prisma.schedule.update({
+    where: { id: scheduleId },
+    data: {
+      isSimulating,
+      simulationStartTime: isSimulating ? new Date() : null,
+    },
   })
 }

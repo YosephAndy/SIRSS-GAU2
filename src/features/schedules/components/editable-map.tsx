@@ -35,6 +35,88 @@ function getBaseCoord(zoneName: string, index: number): [number, number] {
   return mocks[Math.min(index, mocks.length - 1)]
 }
 
+// ─── Interpolación del camión ──────────────────────────────────────────────────
+function segDist(p1: [number, number], p2: [number, number]) {
+  const dx = p1[0] - p2[0], dy = p1[1] - p2[1]
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+function interpolateAlongRoute(positions: [number, number][], progress: number): [number, number] {
+  if (positions.length === 0) return [0, 0]
+  if (positions.length === 1) return positions[0]
+  if (progress <= 0) return positions[0]
+  if (progress >= 1) return positions[positions.length - 1]
+  const dists = positions.slice(0, -1).map((p, i) => segDist(p, positions[i + 1]))
+  const total = dists.reduce((a, b) => a + b, 0)
+  let target = total * progress, cum = 0
+  for (let i = 0; i < dists.length; i++) {
+    if (cum + dists[i] >= target) {
+      const t = (target - cum) / dists[i]
+      return [
+        positions[i][0] + (positions[i + 1][0] - positions[i][0]) * t,
+        positions[i][1] + (positions[i + 1][1] - positions[i][1]) * t,
+      ]
+    }
+    cum += dists[i]
+  }
+  return positions[positions.length - 1]
+}
+
+const truckDivIcon = L.divIcon({
+  className: '',
+  iconAnchor: [22, 22],
+  popupAnchor: [0, -25],
+  html: `
+    <div style="
+      width:44px;height:44px;
+      background:white;
+      border:3px solid #f59e0b;
+      border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      font-size:22px;
+      box-shadow:0 4px 14px rgba(0,0,0,0.35);
+      animation: truckPulse 1.5s ease-in-out infinite;
+    ">🚛</div>
+    <style>
+      @keyframes truckPulse {
+        0%,100%{box-shadow:0 4px 14px rgba(245,158,11,0.4);}
+        50%{box-shadow:0 4px 22px rgba(245,158,11,0.8);}
+      }
+    </style>
+  `,
+})
+
+const SIMULATION_DURATION_MS = 180_000 // 3 minutos por ciclo completo
+
+function TruckSimulator({ positions, startTime }: { positions: [number, number][], startTime: Date }) {
+  const [pos, setPos] = React.useState<[number, number]>(positions[0] ?? [-13.52, -71.96])
+
+  useEffect(() => {
+    if (positions.length < 2) return
+    const startMs = new Date(startTime).getTime()
+    let raf: number
+    const tick = () => {
+      const elapsed = Date.now() - startMs
+      const progress = (elapsed % SIMULATION_DURATION_MS) / SIMULATION_DURATION_MS
+      setPos(interpolateAlongRoute(positions, progress))
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [positions, startTime])
+
+  return (
+    <Marker position={pos} icon={truckDivIcon} zIndexOffset={1000}>
+      <Popup>
+        <div style={{ fontWeight: 700, color: '#d97706', textAlign: 'center' }}>
+          🚛 El camión está en camino
+        </div>
+      </Popup>
+    </Marker>
+  )
+}
+
+
 // ─── Icono numerado con DivIcon ──────────────────────────────────────────────
 function createNumberedIcon(sequence: number, isDirty: boolean, isFirst: boolean, isLast: boolean) {
   const bg = isDirty ? '#ef4444' : isFirst ? '#2563eb' : isLast ? '#1e293b' : '#3b82f6'
@@ -267,6 +349,10 @@ export default function EditableMap({
       .sort((a, b) => a.sequence - b.sequence),
     [dataset, routeKey]
   )
+
+  const isSimulating: boolean = zoneData.length > 0 && !!zoneData[0].isSimulating
+  const simulationStartTime: Date | null = zoneData.length > 0 ? zoneData[0].simulationStartTime : null
+
 
   const waypoints: WaypointCoord[] = useMemo(() =>
     zoneData.map((d, i) => {
@@ -546,6 +632,12 @@ export default function EditableMap({
           }} 
           lastDragEndRef={lastDragEndRef}
         />
+
+        {/* Camión simulado */}
+        {isSimulating && simulationStartTime && positions.length >= 2 && (
+          <TruckSimulator positions={positions} startTime={simulationStartTime} />
+        )}
+
         <MapUpdater routeKey={routeKey} positions={positions} isFullscreen={isFullscreen} />
       </MapContainer>
     </div>
