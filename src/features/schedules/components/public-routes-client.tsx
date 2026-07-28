@@ -56,11 +56,11 @@ export function PublicRoutesClient({ dataset }: PublicRoutesClientProps) {
     const pool = new Set<string>()
     currentDataset.forEach((s) => {
       if (s.zoneName) pool.add(s.zoneName)
-      if (s.originPoint) pool.add(s.originPoint)
-      if (s.destinationPoint) pool.add(s.destinationPoint)
+      if (s.originPoint && s.originPoint !== 'VIA_POINT') pool.add(s.originPoint)
+      if (s.destinationPoint && s.destinationPoint !== 'VIA_POINT') pool.add(s.destinationPoint)
     })
     return Array.from(pool).sort()
-  }, [dataset])
+  }, [currentDataset])
 
   const filteredSuggestions = useMemo(() => {
     if (!searchQuery.trim()) return []
@@ -96,13 +96,14 @@ export function PublicRoutesClient({ dataset }: PublicRoutesClientProps) {
     })
     Array.from(map.values()).forEach((g) => {
       g.waypoints.sort((a, b) => a.sequence - b.sequence)
-      if (g.waypoints.length > 0) {
-        const last = g.waypoints[g.waypoints.length - 1]
-        g.coverage = `${g.waypoints[0].originPoint} → ${last.destinationPoint}`
+      const realWaypoints = g.waypoints.filter(w => w.originPoint !== 'VIA_POINT')
+      if (realWaypoints.length > 0) {
+        const last = realWaypoints[realWaypoints.length - 1]
+        g.coverage = `${realWaypoints[0].originPoint} → ${last.destinationPoint || last.originPoint}`
       }
     })
     return Array.from(map.values())
-  }, [dataset])
+  }, [currentDataset])
 
   // Filtrar según búsqueda
   const filteredRoutes = useMemo(() => {
@@ -113,8 +114,8 @@ export function PublicRoutesClient({ dataset }: PublicRoutesClientProps) {
       if (route.days.join(', ').toLowerCase().includes(term)) return true
       return route.waypoints.some(
         (w) =>
-          w.originPoint.toLowerCase().includes(term) ||
-          w.destinationPoint.toLowerCase().includes(term)
+          (w.originPoint.toLowerCase().includes(term) && w.originPoint !== 'VIA_POINT') ||
+          (w.destinationPoint.toLowerCase().includes(term) && w.destinationPoint !== 'VIA_POINT')
       )
     })
   }, [groupedRoutes, activeSearch])
@@ -334,16 +335,18 @@ function RouteCard({ route, isExpanded, colorIdx, dataset, onToggle }: {
                   <ul className="space-y-4 relative">
                     {(() => {
                       const nodes = []
-                      route.waypoints.forEach((w, i) => {
+                      const realWaypoints = route.waypoints.filter(w => w.originPoint !== 'VIA_POINT')
+                      
+                      realWaypoints.forEach((w, i) => {
                         if (i === 0) {
                           nodes.push({ title: w.originPoint, arrival: null, departure: w.waypointDepartureTime, isFirst: true, isLast: false })
                         } else {
-                          nodes.push({ title: w.originPoint, arrival: route.waypoints[i - 1].waypointArrivalTime, departure: w.waypointDepartureTime, isFirst: false, isLast: false })
+                          nodes.push({ title: w.originPoint, arrival: realWaypoints[i - 1].waypointArrivalTime, departure: w.waypointDepartureTime, isFirst: false, isLast: false })
                         }
                       })
-                      if (route.waypoints.length > 0) {
-                        const lastW = route.waypoints[route.waypoints.length - 1]
-                        nodes.push({ title: lastW.destinationPoint, arrival: lastW.waypointArrivalTime, departure: null, isFirst: false, isLast: true })
+                      if (realWaypoints.length > 0) {
+                        const lastW = realWaypoints[realWaypoints.length - 1]
+                        nodes.push({ title: lastW.destinationPoint || lastW.originPoint, arrival: lastW.waypointArrivalTime, departure: null, isFirst: false, isLast: true })
                       }
                       return nodes.map((node, i) => (
                         <li key={i} className="flex gap-4">
