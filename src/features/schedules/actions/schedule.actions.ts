@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { getSession, isAdmin } from '@/lib/auth'
-import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords, toggleScheduleSuspension, toggleWaypointSuspension, addMapWaypoint, deleteMapWaypoint, createFullRoute, deleteFullRoute, insertViaPoint } from '../services/schedule.service'
+import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords, toggleScheduleSuspension, toggleWaypointSuspension, addMapWaypoint, deleteMapWaypoint, createFullRoute, deleteFullRoute, insertViaPoint, toggleSimulation } from '../services/schedule.service'
 import { scheduleFormSchema } from '../schemas/schedule.schema'
 
 export async function createScheduleAction(data: z.infer<typeof scheduleFormSchema>) {
@@ -345,5 +345,22 @@ export async function deleteFullRouteAction(scheduleId: number) {
   } catch (error) {
     console.error('[DELETE_FULL_ROUTE_ERROR]:', error)
     return { success: false, message: 'Error al eliminar la ruta.' }
+  }
+}
+
+export async function toggleSimulationAction(scheduleId: number, isSimulating: boolean) {
+  try {
+    const session = await getSession()
+    if (!session || !isAdmin(session)) {
+      return { success: false, message: 'No autorizado' }
+    }
+
+    await toggleSimulation(scheduleId, isSimulating)
+    revalidatePath('/admin/routes')
+    revalidatePath('/') // also revalidate public paths if needed
+    return { success: true }
+  } catch (error: any) {
+    console.error('[TOGGLE_SIMULATION_ERROR]:', error)
+    return { success: false, message: `Error: ${error.message || 'Error desconocido'}` }
   }
 }

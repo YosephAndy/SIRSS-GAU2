@@ -35,6 +35,98 @@ function getBaseCoord(zoneName: string, index: number): [number, number] {
   return mocks[Math.min(index, mocks.length - 1)]
 }
 
+// ─── Utilidad de interpolación ───────────────────────────────────────────────
+function getDistance(p1: [number, number], p2: [number, number]) {
+  const dx = p1[0] - p2[0]
+  const dy = p1[1] - p2[1]
+  return Math.sqrt(dx*dx + dy*dy)
+}
+
+function getInterpolatedPosition(
+  positions: [number, number][],
+  progress: number // 0 to 1
+): [number, number] {
+  if (positions.length === 0) return [0, 0]
+  if (positions.length === 1) return positions[0]
+  if (progress <= 0) return positions[0]
+  if (progress >= 1) return positions[positions.length - 1]
+
+  let totalDist = 0
+  const dists = []
+  for (let i = 0; i < positions.length - 1; i++) {
+    const d = getDistance(positions[i], positions[i + 1])
+    dists.push(d)
+    totalDist += d
+  }
+
+  const targetDist = totalDist * progress
+  let currentDist = 0
+
+  for (let i = 0; i < positions.length - 1; i++) {
+    if (currentDist + dists[i] >= targetDist) {
+      const segmentProgress = (targetDist - currentDist) / dists[i]
+      const p1 = positions[i]
+      const p2 = positions[i + 1]
+      return [
+        p1[0] + (p2[0] - p1[0]) * segmentProgress,
+        p1[1] + (p2[1] - p1[1]) * segmentProgress,
+      ]
+    }
+    currentDist += dists[i]
+  }
+
+  return positions[positions.length - 1]
+}
+
+const truckIcon = L.divIcon({
+  className: '',
+  iconAnchor: [20, 20],
+  popupAnchor: [0, -20],
+  html: `
+    <div style="
+      width: 40px; height: 40px;
+      background: white;
+      border: 3px solid #f59e0b;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    ">🚛</div>
+  `,
+})
+
+// ─── Simulador del Camión ────────────────────────────────────────────────────
+function TruckSimulator({ positions, startTime }: { positions: [number, number][], startTime: Date }) {
+  const [currentPos, setCurrentPos] = React.useState<[number, number]>(positions[0])
+  const SIMULATION_DURATION = 180000 // 3 minutos
+
+  useEffect(() => {
+    let animationFrameId: number
+    const startMs = new Date(startTime).getTime()
+
+    const animate = () => {
+      const now = Date.now()
+      const elapsed = now - startMs
+      // Bucle infinito: calculamos el progreso (0 a 1)
+      const progress = (elapsed % SIMULATION_DURATION) / SIMULATION_DURATION
+      setCurrentPos(getInterpolatedPosition(positions, progress))
+      animationFrameId = requestAnimationFrame(animate)
+    }
+
+    animate()
+    return () => cancelAnimationFrame(animationFrameId)
+  }, [positions, startTime])
+
+  return (
+    <Marker position={currentPos} icon={truckIcon} zIndexOffset={1000}>
+      <Popup>
+        <div className="font-bold text-orange-600 text-center">¡El camión está en camino!</div>
+      </Popup>
+    </Marker>
+  )
+}
+
+
 // ─── Icono numerado con DivIcon ──────────────────────────────────────────────
 function createNumberedIcon(sequence: number, isFirst: boolean, isLast: boolean) {
   const bg = isFirst ? '#2563eb' : isLast ? '#1e293b' : '#3b82f6'
@@ -142,8 +234,23 @@ export default function Map({ routeKey, dataset, isFullscreen }: MapProps) {
     )
   }
 
+  const isSimulating = zoneData.length > 0 && zoneData[0].isSimulating
+  const simulationStartTime = zoneData.length > 0 ? zoneData[0].simulationStartTime : null
+
   return (
-    <div style={{ height: containerHeight }} className="w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative z-0">
+    <div className="flex flex-col gap-4">
+      {/* Banner de estado de simulación */}
+      {isSimulating ? (
+        <div className="bg-orange-100 text-orange-800 px-4 py-3 rounded-xl flex items-center justify-center gap-2 border border-orange-200 font-medium">
+          <span className="animate-pulse">🚛</span> ¡Simulación de Recorrido Activa! El camión está en ruta.
+        </div>
+      ) : (
+        <div className="bg-slate-50 text-slate-500 px-4 py-3 rounded-xl flex items-center justify-center gap-2 border border-slate-200 font-medium text-sm">
+          No hay camión en servicio en este momento para esta ruta.
+        </div>
+      )}
+
+      <div style={{ height: containerHeight }} className="w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative z-0">
       <MapContainer
         center={[waypoints[0].lat, waypoints[0].lng]}
         zoom={15}
@@ -194,8 +301,13 @@ export default function Map({ routeKey, dataset, isFullscreen }: MapProps) {
           })
         })()}
 
+        {isSimulating && simulationStartTime && (
+          <TruckSimulator positions={positions} startTime={simulationStartTime} />
+        )}
+
         <MapUpdater routeKey={routeKey} positions={positions} isFullscreen={isFullscreen} />
       </MapContainer>
+    </div>
     </div>
   )
 }
