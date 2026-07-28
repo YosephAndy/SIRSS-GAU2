@@ -620,7 +620,6 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
                   onAddWaypoint={(lat, lng) => { handleAddWaypoint(lat, lng); setIsAddMode(false) }}
                   onDeleteWaypoint={handleDeleteWaypoint}
                   onInsertViaPoint={handleInsertViaPoint}
-                  // props para create mode
                   isCreatingRoute={isCreatingRoute}
                   newWaypoints={newWaypoints}
                   setNewWaypoints={setNewWaypoints}

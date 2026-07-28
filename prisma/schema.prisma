@@ -137,6 +137,7 @@ model Schedule {
   arrivalTime   String?
   zoneName      String?
   isSuspended   Boolean   @default(false)
+  useStraightLine Boolean @default(false)
   waypoints     Waypoint[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

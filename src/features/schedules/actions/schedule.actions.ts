@@ -322,10 +322,10 @@ export async function createFullRouteAction(data: {
     const result = await createFullRoute(data)
     revalidatePath('/admin/routes')
     revalidatePath('/schedules')
-    return { success: true, message: 'Ruta creada correctamente.' }
+    return { success: true, message: 'Ruta creada y guardada correctamente.' }
   } catch (error) {
     console.error('[CREATE_FULL_ROUTE_ERROR]:', error)
-    return { success: false, message: 'Error al crear la ruta completa.' }
+    return { success: false, message: 'Error al guardar la ruta en el mapa.' }
   }
 }
 

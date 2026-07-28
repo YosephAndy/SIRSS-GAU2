@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -77,36 +77,6 @@ function createViaPointIcon() {
   })
 }
 
-// ─── OSRM: obtener ruta por segmentos de máx 25 puntos ──────────────────────
-async function fetchOsrmSegmented(coords: [number, number][]): Promise<[number, number][]> {
-  const CHUNK = 25 // OSRM público: hasta ~25 waypoints por petición
-  const segments: [number, number][][] = []
-
-  for (let i = 0; i < coords.length - 1; i += CHUNK - 1) {
-    segments.push(coords.slice(i, i + CHUNK))
-  }
-
-  const results = await Promise.all(
-    segments.map(async (seg) => {
-      const coordsStr = seg.map(p => `${p[1]},${p[0]}`).join(';')
-      const url = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`
-      try {
-        const res = await fetch(url)
-        const data = await res.json()
-        if (data.code === 'Ok' && data.routes?.[0]) {
-          return data.routes[0].geometry.coordinates.map((c: [number, number]) => [c[1], c[0]] as [number, number])
-        }
-      } catch {}
-      // fallback: línea recta para ese segmento
-      return seg
-    })
-  )
-
-  // Unir segmentos eliminando el punto duplicado de la unión
-  return results.reduce<[number, number][]>((acc, seg, i) => {
-    return i === 0 ? acc.concat(seg) : acc.concat(seg.slice(1))
-  }, [])
-}
 
 // ─── Icono verde de búsqueda ─────────────────────────────────────────────────
 const greenSearchIcon = L.divIcon({
@@ -263,7 +233,7 @@ interface EditableMapProps {
     observations: string;
   }[]
   onMapClickForCreate?: (lat: number, lng: number) => void
-  setNewWaypoints?: (w: any) => void // keep for backwards compatibility with dragend
+  setNewWaypoints?: (w: any) => void
 }
 
 // ─── Componente principal ────────────────────────────────────────────────────
@@ -284,9 +254,6 @@ export default function EditableMap({
   onMapClickForCreate,
   setNewWaypoints,
 }: EditableMapProps) {
-  const [routeLine, setRouteLine] = useState<[number, number][]>([])
-  const [useStraightLine, setUseStraightLine] = useState(false)
-  
   const [draggingViaPoint, setDraggingViaPoint] = useState<{ indexToInsert: number, lat: number, lng: number, afterSequence: number } | null>(null)
   
   const lastDragEndRef = React.useRef<number>(0)
@@ -336,32 +303,6 @@ export default function EditableMap({
     return basePositions
   }, [waypoints, isCreatingRoute, newWaypoints, draggingViaPoint])
 
-  // Stringify para evitar loop infinito en useEffect
-  const positionsString = JSON.stringify(positions)
-
-  // OSRM routing con debounce y segmentación
-  useEffect(() => {
-    if (positions.length < 2) {
-      setRouteLine(positions)
-      return
-    }
-
-    if (useStraightLine) {
-      setRouteLine(positions)
-      return
-    }
-
-    // Línea recta inmediata mientras llega la respuesta de OSRM
-    setRouteLine(positions)
-
-    const timer = setTimeout(async () => {
-      const line = await fetchOsrmSegmented(positions)
-      setRouteLine(line)
-    }, 500)
-
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positionsString, useStraightLine])
 
   if (!isCreatingRoute && waypoints.length === 0) {
     return (
@@ -387,28 +328,7 @@ export default function EditableMap({
         </div>
       )}
 
-      {/* Toggle para línea recta vs calles */}
-      <div className="absolute top-3 right-3 z-[500]">
-        <button
-          onClick={() => setUseStraightLine(!useStraightLine)}
-          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold shadow-md transition-colors border ${
-            useStraightLine
-              ? 'bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200'
-              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            {useStraightLine ? (
-              // Icono de línea recta
-              <><path d="M5 19L19 5"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/></>
-            ) : (
-              // Icono de curva
-              <><path d="M5 19c7 0 7-14 14-14"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/></>
-            )}
-          </svg>
-          {useStraightLine ? 'Modo Recta Activado' : 'Ajustar a Calles'}
-        </button>
-      </div>
+
 
       <MapContainer
         center={[waypoints[0].lat, waypoints[0].lng]}
@@ -420,9 +340,9 @@ export default function EditableMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* Línea de ruta por calles (OSRM) o recta como fallback */}
+        {/* Línea de ruta en modo recta */}
         <Polyline
-          positions={routeLine.length > 1 ? routeLine : positions}
+          positions={positions}
           color={draggingViaPoint !== null ? "#ef4444" : "#3b82f6"}
           weight={draggingViaPoint !== null ? 6 : 4}
           opacity={0.85}
@@ -501,19 +421,17 @@ export default function EditableMap({
                   <p className="text-xs text-slate-600 m-0"><b>De:</b> {w.originPoint}</p>
                   <p className="text-xs text-slate-600 mt-1 m-0"><b>A:</b> {w.destinationPoint}</p>
                 </div>
-                {!isVia && (
-                  <button
-                    onClick={() => {
-                      if (setNewWaypoints) {
-                        setNewWaypoints(newWaypoints.filter((_, idx) => idx !== i))
-                      }
-                    }}
-                    className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg py-1.5 transition-colors"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                    Eliminar punto
-                  </button>
-                )}
+                <button
+                  onClick={() => {
+                    if (setNewWaypoints) {
+                      setNewWaypoints(newWaypoints.filter((_, idx) => idx !== i))
+                    }
+                  }}
+                  className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg py-1.5 transition-colors"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  Eliminar {isVia ? 'desvío' : 'punto'}
+                </button>
               </div>
             </Popup>
           </Marker>
@@ -560,13 +478,13 @@ export default function EditableMap({
                 {dirtyIds.has(w.id) && !isVia && (
                   <p className="text-[11px] text-amber-600 font-semibold mt-2">📍 Posición modificada</p>
                 )}
-                {onDeleteWaypoint && !isVia && (
+                {onDeleteWaypoint && (
                   <button
                     onClick={() => onDeleteWaypoint(w.id)}
                     className="mt-3 w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg py-1.5 transition-colors"
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                    Eliminar punto
+                    Eliminar {isVia ? 'desvío' : 'punto'}
                   </button>
                 )}
               </div>
