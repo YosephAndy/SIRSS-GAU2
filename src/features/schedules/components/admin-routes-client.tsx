@@ -82,7 +82,7 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
 
   useEffect(() => {
     if (!searchQuery.trim() || searchQuery.length < 3) {
-      setSuggestions([])
+      setTimeout(() => setSuggestions([]), 0)
       return
     }
     
@@ -191,9 +191,11 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
 
   // Resetear cambios al cambiar de ruta
   useEffect(() => {
-    setPendingCoords(new Map())
-    setMessage(null)
-    setIsAddMode(false)
+    setTimeout(() => {
+      setPendingCoords(new Map())
+      setMessage(null)
+      setIsAddMode(false)
+    }, 0)
   }, [selectedRouteKey])
 
   const handleCoordChange = (waypointId: number, lat: number, lng: number) => {

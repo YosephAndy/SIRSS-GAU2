@@ -231,7 +231,7 @@ export function PublicRoutesClient({ dataset }: PublicRoutesClientProps) {
             </div>
             <h3 className="text-2xl font-bold text-slate-800 mb-2">Sin resultados</h3>
             <p className="text-slate-500 max-w-md mx-auto">
-              No encontramos rutas que pasen por "{activeSearch}".
+              No encontramos rutas que pasen por &quot;{activeSearch}&quot;.
             </p>
             <button onClick={handleClear} className="mt-6 px-4 py-2 bg-slate-100 text-slate-600 rounded-lg font-semibold hover:bg-slate-200 transition-colors">
               Ver todas las rutas
@@ -240,7 +240,7 @@ export function PublicRoutesClient({ dataset }: PublicRoutesClientProps) {
         ) : (
           <div className="space-y-6">
             <p className="text-slate-500 text-sm font-medium mt-2">
-              {filteredRoutes.length} ruta{filteredRoutes.length > 1 ? 's' : ''} encontrada{filteredRoutes.length > 1 ? 's' : ''} para "{activeSearch}"
+              {filteredRoutes.length} ruta{filteredRoutes.length > 1 ? 's' : ''} encontrada{filteredRoutes.length > 1 ? 's' : ''} para &quot;{activeSearch}&quot;
             </p>
             {filteredRoutes.map((route, i) => {
               const isExpanded = expandedRouteKey === route.key
