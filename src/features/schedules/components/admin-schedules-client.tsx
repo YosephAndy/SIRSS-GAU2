@@ -128,9 +128,10 @@ export function AdminSchedulesClient({ initialDataset }: AdminSchedulesClientPro
     })
   }
 
+  const visibleDataset = dataset.filter(s => s.originPoint !== 'VIA_POINT')
   const filteredDataset = filterZone
-    ? dataset.filter((s) => s.zoneName?.toLowerCase().includes(filterZone.toLowerCase()))
-    : dataset
+    ? visibleDataset.filter((s) => s.zoneName?.toLowerCase().includes(filterZone.toLowerCase()))
+    : visibleDataset
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
@@ -155,12 +156,12 @@ export function AdminSchedulesClient({ initialDataset }: AdminSchedulesClientPro
         <div className="grid grid-cols-2 sm:grid-cols-2 gap-4 mb-8">
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
             <p className="text-sm text-slate-500 font-medium">Total Waypoints</p>
-            <p className="text-3xl font-bold text-slate-800 mt-1">{dataset.length}</p>
+            <p className="text-3xl font-bold text-slate-800 mt-1">{visibleDataset.length}</p>
           </div>
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
             <p className="text-sm text-slate-500 font-medium">Zonas Únicas</p>
             <p className="text-3xl font-bold text-blue-600 mt-1">
-              {new Set(dataset.map((s) => s.zoneName).filter(Boolean)).size}
+              {new Set(visibleDataset.map((s) => s.zoneName).filter(Boolean)).size}
             </p>
           </div>
         </div>
