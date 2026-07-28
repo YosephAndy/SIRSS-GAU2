@@ -331,7 +331,7 @@ export default function EditableMap({
 
 
       <MapContainer
-        center={[waypoints[0].lat, waypoints[0].lng]}
+        center={waypoints.length > 0 ? [waypoints[0].lat, waypoints[0].lng] : [-13.5226, -71.9673]}
         zoom={15}
         style={{ height: '100%', width: '100%' }}
       >
