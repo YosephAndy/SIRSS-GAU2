@@ -33,7 +33,6 @@ export default function CleanCityLanding() {
             <div className="hidden md:flex gap-8">
               <Link href="/schedules" className="text-slate-600 hover:text-[#86efac] transition-colors font-medium">Horarios</Link>
               <Link href="/routes" className="text-slate-600 hover:text-[#7dd3fc] transition-colors font-medium">Rutas</Link>
-              <Link href="/monitoring" className="text-slate-600 hover:text-[#86efac] transition-colors font-medium">Monitoreo</Link>
               <Link href="/alerts" className="text-slate-600 hover:text-[#7dd3fc] transition-colors font-medium">Alertas</Link>
               <Link href="/announcements" className="text-slate-600 hover:text-[#86efac] transition-colors font-medium">Comunicados</Link>
             </div>
@@ -78,9 +77,9 @@ export default function CleanCityLanding() {
               Consulta horarios, rutas, alertas y reporta incidencias fácilmente desde una sola plataforma.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 pt-4 w-full sm:w-auto justify-center lg:justify-start">
-              <Link href="/monitoring" className="flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-[#86efac] to-[#34d399] text-emerald-950 font-bold rounded-2xl shadow-lg shadow-[#86efac]/30 hover:scale-105 transition-all">
+              <Link href="/routes" className="flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-[#86efac] to-[#34d399] text-emerald-950 font-bold rounded-2xl shadow-lg shadow-[#86efac]/30 hover:scale-105 transition-all">
                 <MapPin size={20} />
-                Consultar mi zona
+                Explorar Rutas
               </Link>
               <Link href="/reportes" className="flex items-center justify-center gap-2 px-8 py-4 bg-white text-slate-700 font-bold rounded-2xl shadow-lg shadow-slate-200 hover:bg-[#f8fafc] hover:scale-105 transition-all border border-slate-100">
                 <AlertTriangle size={20} />

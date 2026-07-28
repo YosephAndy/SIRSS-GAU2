@@ -188,10 +188,11 @@ interface MapProps {
   routeKey: string
   dataset: any[]
   isFullscreen?: boolean
+  localSimStartTime?: Date | null
 }
 
 // ─── Componente principal (Vista Ciudadano) ──────────────────────────────────
-export default function Map({ routeKey, dataset, isFullscreen }: MapProps) {
+export default function Map({ routeKey, dataset, isFullscreen, localSimStartTime }: MapProps) {
   const zoneData = useMemo(() =>
     dataset
       .filter((d) => {
@@ -234,23 +235,26 @@ export default function Map({ routeKey, dataset, isFullscreen }: MapProps) {
     )
   }
 
-  const isSimulating = zoneData.length > 0 && zoneData[0].isSimulating
-  const simulationStartTime = zoneData.length > 0 ? zoneData[0].simulationStartTime : null
+  const dbIsSimulating = zoneData.length > 0 && zoneData[0].isSimulating
+  const dbSimulationStartTime = zoneData.length > 0 ? zoneData[0].simulationStartTime : null
+
+  const isSimulating = dbIsSimulating || !!localSimStartTime
+  const simulationStartTime = localSimStartTime || dbSimulationStartTime
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className={`flex flex-col gap-4 ${isFullscreen ? 'flex-1 w-full h-full' : ''}`}>
       {/* Banner de estado de simulación */}
       {isSimulating ? (
-        <div className="bg-orange-100 text-orange-800 px-4 py-3 rounded-xl flex items-center justify-center gap-2 border border-orange-200 font-medium">
+        <div className="bg-orange-100 text-orange-800 px-4 py-3 rounded-xl flex items-center justify-center gap-2 border border-orange-200 font-medium shrink-0">
           <span className="animate-pulse">🚛</span> ¡Simulación de Recorrido Activa! El camión está en ruta.
         </div>
       ) : (
-        <div className="bg-slate-50 text-slate-500 px-4 py-3 rounded-xl flex items-center justify-center gap-2 border border-slate-200 font-medium text-sm">
+        <div className="bg-slate-50 text-slate-500 px-4 py-3 rounded-xl flex items-center justify-center gap-2 border border-slate-200 font-medium text-sm shrink-0">
           No hay camión en servicio en este momento para esta ruta.
         </div>
       )}
 
-      <div style={{ height: containerHeight }} className="w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative z-0">
+      <div style={!isFullscreen ? { height: '500px' } : undefined} className={`w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative z-0 ${isFullscreen ? 'flex-1 min-h-0' : ''}`}>
       <MapContainer
         center={[waypoints[0].lat, waypoints[0].lng]}
         zoom={15}

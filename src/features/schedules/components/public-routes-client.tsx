@@ -272,6 +272,25 @@ function RouteCard({ route, isExpanded, colorIdx, dataset, onToggle }: {
 }) {
   const [showSequence, setShowSequence] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [localSimStartTime, setLocalSimStartTime] = useState<Date | null>(null)
+
+  const toggleFullscreen = () => {
+    if (isFullscreen) {
+      setIsFullscreen(false)
+      setLocalSimStartTime(null)
+    } else {
+      setIsFullscreen(true)
+    }
+  }
+
+  const toggleLocalSimulation = () => {
+    if (localSimStartTime) {
+      setLocalSimStartTime(null)
+    } else {
+      // Start randomly between 0 and 3 minutes ago
+      setLocalSimStartTime(new Date(Date.now() - Math.random() * 180000))
+    }
+  }
 
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow group">
@@ -404,16 +423,31 @@ function RouteCard({ route, isExpanded, colorIdx, dataset, onToggle }: {
               <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest">
                 Mapa del recorrido {isFullscreen && `- ${route.zoneName}`}
               </h4>
-              <button
-                onClick={() => setIsFullscreen(!isFullscreen)}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg shadow-sm hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors"
-              >
-                {isFullscreen ? <><Minimize size={14} /> Salir de pantalla completa</> : <><Maximize size={14} /> Pantalla completa</>}
-              </button>
+              <div className="flex gap-2">
+                {isFullscreen && (
+                  <button
+                    onClick={toggleLocalSimulation}
+                    className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-sm transition-colors border ${
+                      localSimStartTime 
+                        ? 'bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-200' 
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                    }`}
+                  >
+                    <Truck size={14} />
+                    {localSimStartTime ? 'Detener simulación' : 'Ver camión en tiempo real'}
+                  </button>
+                )}
+                <button
+                  onClick={toggleFullscreen}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg shadow-sm hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                >
+                  {isFullscreen ? <><Minimize size={14} /> Salir de pantalla completa</> : <><Maximize size={14} /> Pantalla completa</>}
+                </button>
+              </div>
             </div>
             
-            <div className={`rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-white ${isFullscreen ? 'flex-1' : 'h-[500px]'}`}>
-              <RouteMapViewer routeKey={route.key} dataset={dataset} isFullscreen={isFullscreen} />
+            <div className={`rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-white ${isFullscreen ? 'flex-1 flex flex-col min-h-0' : 'h-[500px]'}`}>
+              <RouteMapViewer routeKey={route.key} dataset={dataset} isFullscreen={isFullscreen} localSimStartTime={localSimStartTime} />
             </div>
           </div>
         </div>
