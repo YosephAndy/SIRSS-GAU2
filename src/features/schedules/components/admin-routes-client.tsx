@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import { Route, Filter, Save, CheckCircle2, AlertCircle, Info, List, ChevronDown, ChevronUp, Maximize, Minimize, Search, X, ArrowLeft, MapPin, Plus, Trash2 } from 'lucide-react'
 import { saveWaypointCoordsAction, addMapWaypointAction, deleteMapWaypointAction, createFullRouteAction, deleteFullRouteAction } from '../actions/schedule.actions'
 import type { FlatSchedule } from '../services/schedule.service'
+import { AdminDailyRoutesMonitor } from './admin-daily-routes-monitor'
 
 // Cargamos el mapa dinámicamente (SSR disabled por Leaflet)
 const EditableMapComponent = dynamic(() => import('./editable-map'), {
@@ -341,6 +342,7 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
           </div>
         </div>
 
+        <AdminDailyRoutesMonitor />
 
         {/* Secuencia Vertical Desplegable */}
         {!isCreatingRoute && currentRoute && (() => {
