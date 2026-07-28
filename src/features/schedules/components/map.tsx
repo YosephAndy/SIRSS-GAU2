@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useEffect, useMemo } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -59,37 +59,6 @@ function createNumberedIcon(sequence: number, isFirst: boolean, isLast: boolean)
   })
 }
 
-// ─── OSRM: obtener ruta por segmentos de máx 25 puntos ──────────────────────
-async function fetchOsrmSegmented(coords: [number, number][]): Promise<[number, number][]> {
-  const CHUNK = 25 // OSRM público: hasta ~25 waypoints por petición
-  const segments: [number, number][][] = []
-
-  for (let i = 0; i < coords.length - 1; i += CHUNK - 1) {
-    segments.push(coords.slice(i, i + CHUNK))
-  }
-
-  const results = await Promise.all(
-    segments.map(async (seg) => {
-      const coordsStr = seg.map(p => `${p[1]},${p[0]}`).join(';')
-      const url = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson`
-      try {
-        const res = await fetch(url)
-        const data = await res.json()
-        if (data.code === 'Ok' && data.routes?.[0]) {
-          return data.routes[0].geometry.coordinates.map((c: [number, number]) => [c[1], c[0]] as [number, number])
-        }
-      } catch {}
-      // fallback: línea recta para ese segmento
-      return seg
-    })
-  )
-
-  // Unir segmentos eliminando el punto duplicado de la unión
-  return results.reduce<[number, number][]>((acc, seg, i) => {
-    return i === 0 ? acc.concat(seg) : acc.concat(seg.slice(1))
-  }, [])
-}
-
 // ─── MapUpdater ──────────────────────────────────────────────────────────────
 function MapUpdater({ routeKey, positions, isFullscreen }: {
   routeKey: string
@@ -131,8 +100,6 @@ interface MapProps {
 
 // ─── Componente principal (Vista Ciudadano) ──────────────────────────────────
 export default function Map({ routeKey, dataset, isFullscreen }: MapProps) {
-  const [routeLine, setRouteLine] = useState<[number, number][]>([])
-
   const zoneData = useMemo(() =>
     dataset
       .filter((d) => {
@@ -165,28 +132,6 @@ export default function Map({ routeKey, dataset, isFullscreen }: MapProps) {
     [waypoints]
   )
 
-  // Stringify para evitar loop infinito en useEffect
-  const positionsString = JSON.stringify(positions)
-
-  // OSRM routing con debounce y segmentación
-  useEffect(() => {
-    if (positions.length < 2) {
-      setRouteLine(positions)
-      return
-    }
-
-    // Línea recta inmediata mientras llega la respuesta de OSRM
-    setRouteLine(positions)
-
-    const timer = setTimeout(async () => {
-      const line = await fetchOsrmSegmented(positions)
-      setRouteLine(line)
-    }, 500)
-
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positionsString])
-
   const containerHeight = isFullscreen ? '100%' : '500px'
 
   if (waypoints.length === 0) {
@@ -209,38 +154,45 @@ export default function Map({ routeKey, dataset, isFullscreen }: MapProps) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* Línea de ruta por calles (OSRM) o recta como fallback */}
+        {/* Línea de ruta en modo recta */}
         <Polyline
-          positions={routeLine.length > 1 ? routeLine : positions}
+          positions={positions}
           color="#3b82f6"
           weight={4}
           opacity={0.85}
         />
 
-        {waypoints.map((w, i) => (
-          <Marker
-            key={w.id}
-            position={[w.lat, w.lng]}
-            icon={createNumberedIcon(
-              w.sequence,
-              i === 0,
-              i === waypoints.length - 1
-            )}
-          >
-            <Popup>
-              <div className="font-sans min-w-[180px]">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">
-                    {w.sequence}
+        {(() => {
+          let displayNumber = 0;
+          const realStops = waypoints.filter(w => w.originPoint !== 'VIA_POINT');
+          return realStops.map((w, i) => {
+            displayNumber++;
+            return (
+              <Marker
+                key={w.id}
+                position={[w.lat, w.lng]}
+                icon={createNumberedIcon(
+                  displayNumber,
+                  i === 0,
+                  i === realStops.length - 1
+                )}
+              >
+                <Popup>
+                  <div className="font-sans min-w-[180px]">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">
+                        {displayNumber}
+                      </div>
+                      <p className="font-bold text-slate-800 m-0 text-sm">Parada {displayNumber}</p>
+                    </div>
+                    <p className="text-xs text-slate-600 m-0"><b>De:</b> {w.originPoint}</p>
+                    <p className="text-xs text-slate-600 mt-1 m-0"><b>A:</b> {w.destinationPoint}</p>
                   </div>
-                  <p className="font-bold text-slate-800 m-0 text-sm">Parada {w.sequence}</p>
-                </div>
-                <p className="text-xs text-slate-600 m-0"><b>De:</b> {w.originPoint}</p>
-                <p className="text-xs text-slate-600 mt-1 m-0"><b>A:</b> {w.destinationPoint}</p>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+                </Popup>
+              </Marker>
+            )
+          })
+        })()}
 
         <MapUpdater routeKey={routeKey} positions={positions} isFullscreen={isFullscreen} />
       </MapContainer>
