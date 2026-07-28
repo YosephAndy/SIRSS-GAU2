@@ -3,8 +3,8 @@
 import React, { useState, useTransition, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { Route, Filter, Save, CheckCircle2, AlertCircle, Info, List, ChevronDown, ChevronUp, Maximize, Minimize, Search, X, ArrowLeft, MapPin, Plus, Trash2 } from 'lucide-react'
-import { saveWaypointCoordsAction, addMapWaypointAction, deleteMapWaypointAction, createFullRouteAction, deleteFullRouteAction, insertViaPointAction } from '../actions/schedule.actions'
+import { Route, Filter, Save, CheckCircle2, AlertCircle, Info, List, ChevronDown, ChevronUp, Maximize, Minimize, Search, X, ArrowLeft, MapPin, Plus, Trash2, Play, Square } from 'lucide-react'
+import { saveWaypointCoordsAction, addMapWaypointAction, deleteMapWaypointAction, createFullRouteAction, deleteFullRouteAction, insertViaPointAction, toggleSimulationAction } from '../actions/schedule.actions'
 import type { FlatSchedule } from '../services/schedule.service'
 
 // Cargamos el mapa dinámicamente (SSR disabled por Leaflet)
@@ -29,7 +29,7 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
         dataset.map((s) => {
           const key = `${s.zoneName || 'Sin Zona'}|${s.days.join(',')}|${s.shift}`
           const label = `${s.zoneName || 'Sin Zona'} — ${s.days.join(', ')} (${s.shift})`
-          return [key, { key, label }]
+          return [key, { key, label, scheduleId: s.scheduleId, isSimulating: s.isSimulating }]
         })
       ).values()
     )
@@ -180,14 +180,19 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
 
   const dirtyIds = new Set(pendingCoords.keys())
 
-  // Obtener el scheduleId de la ruta seleccionada (primer waypoint del grupo)
-  const currentScheduleId = useMemo(() => {
-    const first = dataset.find((s) => {
-      const k = `${s.zoneName || 'Sin Zona'}|${s.days.join(',')}|${s.shift}`
-      return k === selectedRouteKey
+  const currentRoute = uniqueRoutes.find((r) => r.key === selectedRouteKey)
+  const currentScheduleId = currentRoute?.scheduleId ?? null
+
+  const handleToggleSimulation = async (scheduleId: number, isSimulating: boolean) => {
+    startTransition(async () => {
+      const res = await toggleSimulationAction(scheduleId, !isSimulating)
+      if (!res.success) {
+        setMessage({ type: 'error', text: res.message })
+      } else {
+        router.refresh()
+      }
     })
-    return first?.scheduleId ?? null
-  }, [dataset, selectedRouteKey])
+  }
 
   // Resetear cambios al cambiar de ruta
   useEffect(() => {
@@ -333,8 +338,6 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
     })
   }
 
-  const currentRoute = uniqueRoutes.find((r) => r.key === selectedRouteKey)
-
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
@@ -402,13 +405,29 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
             )}
             {/* Botón eliminar ruta (solo en modo selección con ruta activa) */}
             {!isCreatingRoute && currentRoute && (
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-colors border border-red-200 bg-white text-red-600 hover:bg-red-50 shadow-sm"
-              >
-                <Trash2 size={16} />
-                Eliminar Ruta
-              </button>
+              <>
+                <button
+                  onClick={() => handleToggleSimulation(currentRoute.scheduleId, !currentRoute.isSimulating)}
+                  className={`flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-colors border shadow-sm ${
+                    currentRoute.isSimulating 
+                    ? 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                  }`}
+                >
+                  {currentRoute.isSimulating ? (
+                    <><Square size={16} /> Detener Simulación</>
+                  ) : (
+                    <><Play size={16} /> Simular Recorrido</>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-colors border border-red-200 bg-white text-red-600 hover:bg-red-50 shadow-sm"
+                >
+                  <Trash2 size={16} />
+                  Eliminar Ruta
+                </button>
+              </>
             )}
             <button
               onClick={() => {
