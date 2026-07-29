@@ -9,7 +9,7 @@ import useSWR from 'swr'
 const fetcher = (url: string) => fetch(url).then(res => res.json())
 
 // Cargamos el map viewer dinámicamente
-const RouteMapViewer = dynamic<{ routeKey: string; dataset: FlatSchedule[]; isFullscreen?: boolean }>(
+const RouteMapViewer = dynamic<{ routeKey: string; dataset: FlatSchedule[]; isFullscreen?: boolean; localSimStartTime?: Date | null }>(
   () => import('@/features/schedules/components/route-map-viewer').then((m) => m.RouteMapViewer as any),
   { ssr: false, loading: () => <div className="h-[320px] bg-slate-100 animate-pulse rounded-2xl" /> }
 )

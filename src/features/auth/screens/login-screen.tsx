@@ -4,8 +4,13 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Leaf } from 'lucide-react'
 import { LoginForm } from '@/features/auth/components/login-form'
+import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 
-export function LoginScreen() {
+function LoginScreenContent() {
+  const searchParams = useSearchParams()
+  const isDriver = searchParams.get('role') === 'driver'
+
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-[#f8fafc]">
       {/* Background Image */}
@@ -32,10 +37,10 @@ export function LoginScreen() {
             <span className="font-bold text-2xl tracking-tight text-slate-900">CleanCity</span>
           </Link>
           <h2 className="text-3xl font-extrabold text-slate-900">
-            Iniciar Sesión
+            {isDriver ? 'Portal de Conductores' : 'Iniciar Sesión'}
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Accede a la gestión inteligente de residuos
+            {isDriver ? 'Accede a tus rutas asignadas' : 'Accede a la gestión inteligente de residuos'}
           </p>
         </div>
 
@@ -45,5 +50,13 @@ export function LoginScreen() {
         </div>
       </div>
     </div>
+  )
+}
+
+export function LoginScreen() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Cargando...</div>}>
+      <LoginScreenContent />
+    </Suspense>
   )
 }

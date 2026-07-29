@@ -25,6 +25,7 @@ export const baseRegisterSchema = z.object({
     .min(6, 'Mínimo 6 caracteres')
     .regex(/[A-Z]/, 'Debe contener mayúscula')
     .regex(/[0-9]/, 'Debe contener número'),
+  roleName: z.string().optional(),
 })
 
 export const registerSchema = baseRegisterSchema.extend({

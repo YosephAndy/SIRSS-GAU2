@@ -4,8 +4,13 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Leaf } from 'lucide-react'
 import { RegisterForm } from '@/features/auth/components/register-form'
+import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 
-export function RegisterScreen() {
+function RegisterScreenContent() {
+  const searchParams = useSearchParams()
+  const isDriver = searchParams.get('role') === 'driver'
+
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-[#f8fafc]">
       {/* Background Image */}
@@ -32,10 +37,10 @@ export function RegisterScreen() {
             <span className="font-bold text-2xl tracking-tight text-slate-900">CleanCity</span>
           </Link>
           <h2 className="text-3xl font-extrabold text-slate-900">
-            Crear Cuenta
+            {isDriver ? 'Registro de Conductor' : 'Crear Cuenta'}
           </h2>
           <p className="mt-2 text-sm text-slate-600">
-            Únete a la gestión inteligente de residuos
+            {isDriver ? 'Únete al equipo operativo' : 'Únete a la gestión inteligente de residuos'}
           </p>
         </div>
 
@@ -45,5 +50,13 @@ export function RegisterScreen() {
         </div>
       </div>
     </div>
+  )
+}
+
+export function RegisterScreen() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Cargando...</div>}>
+      <RegisterScreenContent />
+    </Suspense>
   )
 }

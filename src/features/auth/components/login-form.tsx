@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { signIn, getSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { loginSchema, type LoginSchema } from '@/features/auth/schemas/auth-schemas'
 
 import Link from 'next/link'
@@ -12,6 +12,8 @@ import { Mail, Lock, Loader2, AlertTriangle } from 'lucide-react'
 
 export function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isDriver = searchParams.get('role') === 'driver'
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -139,11 +141,28 @@ export function LoginForm() {
         </button>
       </div>
 
-      <div className="mt-6 text-center text-sm">
-        <span className="text-slate-600">¿No tienes cuenta? </span>
-        <Link href="/register" replace className="font-bold text-[#2563eb] hover:text-[#1d4ed8]">
-          Regístrate aquí
-        </Link>
+      <div className="mt-6 flex flex-col gap-3 text-center text-sm">
+        <div>
+          <span className="text-slate-600">¿No tienes cuenta? </span>
+          <Link href={isDriver ? "/register?role=driver" : "/register"} replace className="font-bold text-[#2563eb] hover:text-[#1d4ed8]">
+            Regístrate aquí
+          </Link>
+        </div>
+        {!isDriver && (
+          <div className="pt-3 border-t border-slate-100">
+            <span className="text-slate-600">¿Eres personal operativo? </span>
+            <Link href="/login?role=driver" replace className="font-bold text-emerald-600 hover:text-emerald-700">
+              Ingresar como Conductor
+            </Link>
+          </div>
+        )}
+        {isDriver && (
+          <div className="pt-3 border-t border-slate-100">
+            <Link href="/login" replace className="font-bold text-slate-600 hover:text-slate-800">
+              Volver al inicio normal
+            </Link>
+          </div>
+        )}
       </div>
     </form>
   )

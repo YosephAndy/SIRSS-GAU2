@@ -21,23 +21,35 @@ export const userRepository = {
   },
 
   async create(data: CreateUserInput): Promise<User> {
-    // Buscar el rol ADMIN que creaste
-    const adminRole = await prisma.role.findUnique({
-      where: { name: 'ADMIN' },
+    const roleName = data.roleName || 'CITIZEN'
+    const role = await prisma.role.findUnique({
+      where: { name: roleName },
     })
 
-    if (!adminRole) {
-      throw new Error('El rol ADMIN no existe en la base de datos. Créalo en Prisma Studio primero.')
+    if (!role) {
+      throw new Error(`El rol ${roleName} no existe en la base de datos.`)
     }
 
-    return prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         name: data.name ?? '',
         email: data.email,
         password: data.password,
-        roleId: adminRole.id, // Asignamos el rol ADMIN por defecto
+        roleId: role.id,
       },
-    }) as Promise<User>
+    }) as User
+
+    if (roleName === 'DRIVER') {
+      await prisma.driverProfile.create({
+        data: {
+          userId: user.id,
+          licensePlate: 'PENDIENTE',
+          phone: 'PENDIENTE',
+        },
+      })
+    }
+
+    return user
   },
 
   async update(

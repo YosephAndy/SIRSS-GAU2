@@ -209,7 +209,7 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
     startTransition(async () => {
       const res = await toggleSimulationAction(scheduleId, newIsSimulating)
       if (!res.success) {
-        setMessage({ type: 'error', text: res.message })
+        setMessage({ type: 'error', text: res.message || 'Error desconocido' })
         // Revertir estado local si falló
         setSimulatingIds(prev => {
           const next = new Map(prev)

@@ -8,13 +8,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Validar datos con Zod
-    const { email, password, name } = await baseRegisterSchema.parseAsync(body)
+    const { email, password, name, roleName } = await baseRegisterSchema.parseAsync(body)
 
     // Registrar usuario
     await authService.register({
       email,
       password,
       name,
+      roleName,
     })
 
     return NextResponse.json(
