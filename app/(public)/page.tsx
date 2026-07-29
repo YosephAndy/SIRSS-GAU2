@@ -33,6 +33,8 @@ export default function CleanCityLanding() {
             <div className="hidden md:flex gap-8">
               <Link href="/schedules" className="text-slate-600 hover:text-[#86efac] transition-colors font-medium">Horarios</Link>
               <Link href="/routes" className="text-slate-600 hover:text-[#7dd3fc] transition-colors font-medium">Rutas</Link>
+              <Link href="/collection-points" className="text-slate-600 hover:text-[#7dd3fc] transition-colors font-medium">Puntos</Link>
+              <Link href="/monitoring" className="text-slate-600 hover:text-[#86efac] transition-colors font-medium">Monitoreo</Link>
               <Link href="/alerts" className="text-slate-600 hover:text-[#7dd3fc] transition-colors font-medium">Alertas</Link>
               <Link href="/announcements" className="text-slate-600 hover:text-[#86efac] transition-colors font-medium">Comunicados</Link>
             </div>
