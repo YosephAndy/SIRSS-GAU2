@@ -25,7 +25,7 @@ const SIDEBAR_GROUPS = [
     title: "PERSONAL Y ASIGNACIONES",
     items: [
       { id: "SIRSS-26", label: "Gestionar conductores", icon: <Users size={18} />, href: "#" },
-      { id: "SIRSS-49", label: "Asignar rutas a conductores", icon: <Truck size={18} />, href: "#" },
+      { id: "SIRSS-49", label: "Asignar rutas a conductores", icon: <Truck size={18} />, href: "/admin/assignments" },
     ]
   },
   {
@@ -44,7 +44,7 @@ const SIDEBAR_GROUPS = [
       { id: "SIRSS-58", label: "Generar estadísticas", icon: <BarChart2 size={18} />, href: "#" },
       { id: "SIRSS-61", label: "Reporte diario", icon: <FileText size={18} />, href: "#" },
       { id: "SIRSS-62", label: "Reporte semanal", icon: <FileText size={18} />, href: "#" },
-      { id: "SIRSS-63", label: "Exportar reportes", icon: <Download size={18} />, href: "#" },
+      { id: "SIRSS-63", label: "Exportar reportes", icon: <Download size={18} />, href: "/admin/reports" },
     ]
   }
 ]
