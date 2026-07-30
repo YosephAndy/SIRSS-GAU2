@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react'
 import useSWR from 'swr'
-import { Search, X, MapPin, Map } from 'lucide-react'
+import { Search, X, MapPin, Map, Bell, BellRing, Loader2 } from 'lucide-react'
 import type { FlatSchedule } from '@/features/schedules/services/schedule.service'
+import { toggleReminderAction, getUserRemindersAction } from '@/features/schedules/actions/reminder.actions'
 
 const fetcher = (url: string) => fetch(url).then((res) => {
   if (!res.ok) throw new Error('Error al cargar los horarios')
@@ -48,6 +49,17 @@ export default function SchedulesPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeSearch, setActiveSearch] = useState('')
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [reminders, setReminders] = useState<Set<number>>(new Set())
+  const [loadingReminderId, setLoadingReminderId] = useState<number | null>(null)
+  const [toastMsg, setToastMsg] = useState<{msg: string, isError: boolean} | null>(null)
+
+  React.useEffect(() => {
+    getUserRemindersAction().then(res => {
+      if (res.success && res.reminders) {
+        setReminders(new Set(res.reminders))
+      }
+    })
+  }, [])
 
   // Obtener TODOS los horarios solo una vez para generar las sugerencias de autocompletado
   const { data: allSchedules = [] } = useSWR<FlatSchedule[]>('/api/schedules', fetcher, {
@@ -138,10 +150,43 @@ export default function SchedulesPage() {
     g.waypoints.sort((a, b) => a.sequence - b.sequence)
   })
 
-  
+  const handleToggleReminder = async (waypointId: number, scheduleId: number, timeStr: string | null) => {
+    if (!timeStr) {
+      setToastMsg({ msg: 'No se puede activar recordatorio: no hay hora definida.', isError: true })
+      return
+    }
+    
+    setLoadingReminderId(waypointId)
+    const res = await toggleReminderAction(waypointId, scheduleId, timeStr)
+    if (res.success) {
+      setReminders(prev => {
+        const next = new Set(prev)
+        if (res.isReminding) next.add(waypointId)
+        else next.delete(waypointId)
+        return next
+      })
+      setToastMsg({ msg: res.message || '', isError: false })
+      setTimeout(() => setToastMsg(null), 5000)
+    } else {
+      setToastMsg({ msg: res.message || 'Error de red.', isError: true })
+      setTimeout(() => setToastMsg(null), 5000)
+      if (res.message?.includes('iniciar sesión')) {
+        // Redirigir al login en el futuro o mostrar banner
+      }
+    }
+    setLoadingReminderId(null)
+  }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
+    <div className="min-h-screen bg-[#f8fafc] font-sans pb-20 relative">
+      {/* Toast Notification para Recordatorio */}
+      {toastMsg && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full font-bold shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5 ${toastMsg.isError ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'}`}>
+          {toastMsg.isError ? <X size={20} /> : <BellRing size={20} />}
+          {toastMsg.msg}
+        </div>
+      )}
+
       <div className="bg-white border-b border-slate-200 pt-12 pb-16 px-4 relative shadow-sm z-30">
         <div className="max-w-[1200px] mx-auto relative z-30 text-center">
           <h1 className="text-3xl md:text-4xl font-extrabold text-slate-800 mb-4 tracking-tight">
@@ -423,6 +468,30 @@ export default function SchedulesPage() {
                                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1 border border-emerald-200 animate-pulse shadow-sm">
                                         📍 Tu calle
                                       </span>
+                                    )}
+                                    {/* Botón de Recordatorio */}
+                                    {isMatch && !node.isSuspended && node.time && (
+                                      <button
+                                        onClick={() => {
+                                          const wpOriginalId = group.waypoints[ni].originalId; // Use originalId for waypoint id
+                                          handleToggleReminder(wpOriginalId, group.scheduleId, node.time)
+                                        }}
+                                        disabled={loadingReminderId === group.waypoints[ni].originalId}
+                                        className={`ml-auto text-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                                          reminders.has(group.waypoints[ni].originalId)
+                                            ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                      >
+                                        {loadingReminderId === group.waypoints[ni].originalId ? (
+                                          <Loader2 size={14} className="animate-spin" />
+                                        ) : reminders.has(group.waypoints[ni].originalId) ? (
+                                          <BellRing size={14} />
+                                        ) : (
+                                          <Bell size={14} />
+                                        )}
+                                        {reminders.has(group.waypoints[ni].originalId) ? 'Recordatorio Activado' : 'Recordarme'}
+                                      </button>
                                     )}
                                   </div>
                                   <p className={`font-semibold text-slate-800 ${node.isSuspended ? 'line-through text-slate-500' : ''}`}>{node.location}</p>

@@ -2,7 +2,7 @@
 
 import React, { useState, useTransition } from 'react'
 import dynamic from 'next/dynamic'
-import { AlertTriangle, Navigation, CheckCircle2, MapPin, Clock, Activity, Shield, Loader2 } from 'lucide-react'
+import { AlertTriangle, Navigation, CheckCircle2, MapPin, Clock, Activity, Shield, Loader2, Pause, Play, Maximize, Minimize } from 'lucide-react'
 import { startDriverRouteAction, reportEmergencyAction, finishDriverRouteAction } from '../actions/schedule.actions'
 
 // Load Leaflet map dynamically (SSR disabled)
@@ -51,12 +51,32 @@ const EMERGENCY_BUTTONS: { label: string; type: EmergencyType; color: string }[]
 export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
   const [isPending, startTransition] = useTransition()
   const [isActive, setIsActive] = useState(route?.status === 'IN_PROGRESS')
+  const [isPaused, setIsPaused] = useState(false)
   const [simStartTime, setSimStartTime] = useState<Date | null>(
     route?.status === 'IN_PROGRESS' ? new Date() : null
   )
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [reportingType, setReportingType] = useState<EmergencyType | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const mapContainerRef = React.useRef<HTMLDivElement>(null)
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      mapContainerRef.current?.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`)
+      })
+    } else {
+      document.exitFullscreen()
+    }
+  }
+
+  React.useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
 
   const showNotification = (type: 'success' | 'error', text: string) => {
     setNotification({ type, text })
@@ -69,6 +89,7 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
       const res = await startDriverRouteAction(route.assignmentId, route.scheduleId)
       if (res.success) {
         setIsActive(true)
+        setIsPaused(false)
         setSimStartTime(new Date())
         showNotification('success', '🚛 ¡Ruta iniciada! El camión está en camino.')
       } else {
@@ -77,12 +98,23 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
     })
   }
 
+  const handlePauseResume = () => {
+    if (isPaused) {
+      setIsPaused(false)
+      showNotification('success', '▶️ Ruta retomada. Camión en movimiento.')
+    } else {
+      setIsPaused(true)
+      showNotification('success', '⏸️ Ruta detenida. Camión en pausa.')
+    }
+  }
+
   const handleFinishRoute = () => {
     if (!route) return
     startTransition(async () => {
       const res = await finishDriverRouteAction(route.assignmentId, route.scheduleId)
       if (res.success) {
         setIsActive(false)
+        setIsPaused(false)
         setSimStartTime(null)
         showNotification('success', '✅ Ruta finalizada.')
       } else {
@@ -157,17 +189,26 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
                     </div>
                   )
                 ) : (
-                  <button
-                    onClick={handleFinishRoute}
-                    disabled={isPending}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-all disabled:opacity-50 shadow-lg"
-                  >
-                    {isPending ? (
-                      <><Loader2 size={16} className="animate-spin" /> Deteniendo...</>
-                    ) : (
-                      <><Shield size={16} /> Finalizar Ruta</>
-                    )}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handlePauseResume}
+                      disabled={isPending}
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-lg ${isPaused ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-orange-500 hover:bg-orange-600 text-white'}`}
+                    >
+                      {isPaused ? <><Play size={16} /> Retomar</> : <><Pause size={16} /> Detener</>}
+                    </button>
+                    <button
+                      onClick={handleFinishRoute}
+                      disabled={isPending}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-all shadow-lg"
+                    >
+                      {isPending ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : (
+                        <Shield size={16} />
+                      )}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -181,16 +222,17 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
         </div>
 
         {/* Map Area */}
-        <div className={`bg-[#181818] border border-white/10 rounded-2xl overflow-hidden relative transition-all ${isFullscreen ? 'fixed top-0 left-0 w-screen h-screen z-[99999] rounded-none bg-[#101010]' : 'h-[400px]'}`}>
+        <div ref={mapContainerRef} className={`bg-[#181818] border border-white/10 rounded-2xl overflow-hidden relative transition-all ${isFullscreen ? 'h-screen w-screen' : 'h-[400px]'}`}>
           <button 
-            onClick={() => setIsFullscreen(!isFullscreen)}
+            onClick={toggleFullscreen}
             className="absolute top-4 right-4 z-[9999] bg-slate-900/80 hover:bg-slate-900 text-white p-2 rounded-lg backdrop-blur shadow-lg border border-white/10"
+            title={isFullscreen ? 'Contraer Mapa' : 'Agrandar Mapa'}
           >
-            {isFullscreen ? 'Contraer Mapa' : 'Agrandar Mapa'}
+            {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
           </button>
 
           {validRouteWaypoints.length > 0 ? (
-            <DriverMap waypoints={validWaypoints} routeWaypoints={validRouteWaypoints} simStartTime={simStartTime} />
+            <DriverMap waypoints={validWaypoints} routeWaypoints={validRouteWaypoints} simStartTime={simStartTime} isPaused={isPaused} />
           ) : (
             <div className="h-full flex items-center justify-center">
               <div className="text-center space-y-2 text-slate-600">

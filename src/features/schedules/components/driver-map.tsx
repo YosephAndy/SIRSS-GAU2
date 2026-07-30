@@ -16,6 +16,7 @@ interface DriverMapProps {
   waypoints: Waypoint[]
   routeWaypoints: Waypoint[]
   simStartTime: Date | null
+  isPaused?: boolean
 }
 
 // Interpolate truck position along route
@@ -92,22 +93,30 @@ function MapResizer() {
   return null
 }
 
-function TruckSimulator({ positions, startTime }: { positions: [number, number][]; startTime: Date }) {
+function TruckSimulator({ positions, startTime, isPaused }: { positions: [number, number][]; startTime: Date; isPaused: boolean }) {
   const [pos, setPos] = useState<[number, number]>(positions[0])
   const DURATION = 180000 // 3 min
+  const elapsedRef = React.useRef(0)
+  const lastTickRef = React.useRef(Date.now())
 
   useEffect(() => {
+    lastTickRef.current = Date.now()
+    if (isPaused) return
+
     let raf: number
-    const startMs = new Date(startTime).getTime()
     const animate = () => {
-      const elapsed = Date.now() - startMs
-      const progress = (elapsed % DURATION) / DURATION
+      const now = Date.now()
+      const delta = now - lastTickRef.current
+      lastTickRef.current = now
+      elapsedRef.current += delta
+
+      const progress = (elapsedRef.current % DURATION) / DURATION
       setPos(getInterpolatedPosition(positions, progress))
       raf = requestAnimationFrame(animate)
     }
-    animate()
+    raf = requestAnimationFrame(animate)
     return () => cancelAnimationFrame(raf)
-  }, [positions, startTime])
+  }, [positions, isPaused, startTime])
 
   return (
     <Marker position={pos} icon={truckIcon} zIndexOffset={1000}>
@@ -116,7 +125,7 @@ function TruckSimulator({ positions, startTime }: { positions: [number, number][
   )
 }
 
-export default function DriverMap({ waypoints, routeWaypoints, simStartTime }: DriverMapProps) {
+export default function DriverMap({ waypoints, routeWaypoints, simStartTime, isPaused = false }: DriverMapProps) {
   const validWaypoints = waypoints.filter(w => w.lat !== null && w.lng !== null)
   const validRouteWaypoints = routeWaypoints.filter(w => w.lat !== null && w.lng !== null)
   
@@ -152,7 +161,7 @@ export default function DriverMap({ waypoints, routeWaypoints, simStartTime }: D
 
       {/* Truck simulation runs over all points */}
       {simStartTime && routePositions.length > 1 && (
-        <TruckSimulator positions={routePositions} startTime={simStartTime} />
+        <TruckSimulator positions={routePositions} startTime={simStartTime} isPaused={isPaused} />
       )}
     </MapContainer>
   )

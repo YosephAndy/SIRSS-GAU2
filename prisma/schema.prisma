@@ -45,6 +45,9 @@ model User {
 
   // Mantenemos la relación con Session del esquema original
   sessions Session[]
+
+  // Recordatorios de recolección
+  reminders Reminder[]
 }
 
 // Mantenemos el modelo Session del esquema original
@@ -145,6 +148,7 @@ model Schedule {
   simulationStartTime DateTime?
   waypoints     Waypoint[]
   assignments   DriverAssignment[]
+  reminders     Reminder[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -166,6 +170,7 @@ model Waypoint {
   lat            Float?    // Coordenada de latitud (editable desde el mapa admin)
   lng            Float?    // Coordenada de longitud (editable desde el mapa admin)
   isSuspended    Boolean   @default(false)
+  reminders      Reminder[]
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -267,4 +272,21 @@ enum AssignmentStatus {
   PENDING
   IN_PROGRESS
   COMPLETED
+}
+
+// Recordatorios configurados por los ciudadanos
+model Reminder {
+  id         Int      @id @default(autoincrement())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduleId Int
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  waypointId Int
+  waypoint   Waypoint @relation(fields: [waypointId], references: [id], onDelete: Cascade)
+  remindAt   String   // Hora de notificación (ej. "06:30 AM")
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, waypointId])
 }
