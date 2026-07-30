@@ -23,11 +23,11 @@ function parseCSV(text: string): CSVRow[] {
   
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i]
-    let cols: string[] = []
+    const cols: string[] = []
     let current = ''
     let inQuotes = false
     
-    for (let char of line) {
+    for (const char of line) {
       if (char === '"') {
         inQuotes = !inQuotes
       } else if (char === ',' && !inQuotes) {
@@ -182,7 +182,7 @@ async function main() {
     const [zoneName, shift, type] = routeKey.split('|')
     
     const route = await prisma.route.create({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       data: {
         zoneId: zonesMap.get(zoneName) ?? undefined,
         shift: shift,
@@ -209,7 +209,7 @@ async function main() {
       const arrivalTime = sortedRows[sortedRows.length - 1]?.hora_llegada || null
       
       const schedule = await prisma.schedule.create({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         data: {
           routeId: route.id,
           days: days as any,
@@ -222,7 +222,7 @@ async function main() {
       
       for (const row of sortedRows) {
         await prisma.waypoint.create({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           data: {
             scheduleId: schedule.id,
             sequence: row.orden,

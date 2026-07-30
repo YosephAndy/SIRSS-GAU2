@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { registerSchema, type RegisterSchema } from '@/features/auth/schemas/auth-schemas'
 
 import Link from 'next/link'
@@ -11,6 +11,8 @@ import { Mail, Lock, User, Loader2, AlertTriangle } from 'lucide-react'
 
 export function RegisterForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const isDriver = searchParams.get('role') === 'driver'
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
@@ -36,6 +38,7 @@ export function RegisterForm() {
           email: data.email,
           password: data.password,
           name: data.name,
+          roleName: isDriver ? 'DRIVER' : 'CITIZEN'
         }),
       })
 
@@ -179,11 +182,13 @@ export function RegisterForm() {
         </button>
       </div>
 
-      <div className="mt-6 text-center text-sm">
-        <span className="text-slate-600">¿Ya tienes cuenta? </span>
-        <Link href="/login" replace className="font-bold text-[#2563eb] hover:text-[#1d4ed8]">
-          Inicia sesión aquí
-        </Link>
+      <div className="mt-6 flex flex-col gap-3 text-center text-sm">
+        <div>
+          <span className="text-slate-600">¿Ya tienes cuenta? </span>
+          <Link href={isDriver ? "/login?role=driver" : "/login"} replace className="font-bold text-[#2563eb] hover:text-[#1d4ed8]">
+            Inicia sesión aquí
+          </Link>
+        </div>
       </div>
     </form>
   )

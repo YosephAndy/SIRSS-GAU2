@@ -2,6 +2,7 @@ import React from 'react'
 import { Metadata } from 'next'
 import { getAllSchedules } from '@/features/schedules/services/schedule.service'
 import { PublicRoutesClient } from '@/features/schedules/components/public-routes-client'
+import MobileBottomNav from '@/components/ui/MobileBottomNav'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,5 +14,10 @@ export const metadata: Metadata = {
 export default async function RoutesPage() {
   const dataset = await getAllSchedules()
 
-  return <PublicRoutesClient dataset={dataset} />
+  return (
+    <>
+      <PublicRoutesClient dataset={dataset} />
+      <MobileBottomNav />
+    </>
+  )
 }

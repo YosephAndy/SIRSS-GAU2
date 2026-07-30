@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+// Force hot reload for Prisma client
 
 export type FlatSchedule = {
   id: number
@@ -22,6 +23,10 @@ export type FlatSchedule = {
   originalId: number
   lat: number | null
   lng: number | null
+  isSuspended: boolean
+  isWaypointSuspended: boolean
+  isSimulating: boolean
+  simulationStartTime: Date | null
 }
 
 function waypointToFlatSchedule(
@@ -38,12 +43,16 @@ function waypointToFlatSchedule(
     originalId: number
     lat: number | null
     lng: number | null
+    isSuspended: boolean
   },
   schedule: {
     id: number
     days: string[]
     departureTime: string | null
     arrivalTime: string | null
+    isSuspended: boolean
+    isSimulating: boolean
+    simulationStartTime: Date | null
     route: {
       id: number
       zoneId: number | null
@@ -75,6 +84,10 @@ function waypointToFlatSchedule(
     originalId: waypoint.originalId,
     lat: waypoint.lat ?? null,
     lng: waypoint.lng ?? null,
+    isSuspended: schedule.isSuspended,
+    isWaypointSuspended: waypoint.isSuspended,
+    isSimulating: schedule.isSimulating,
+    simulationStartTime: schedule.simulationStartTime,
   }
 }
 
@@ -329,5 +342,215 @@ export async function updateWaypointCoords(updates: { id: number; lat: number; l
 export async function getAllZones() {
   return prisma.zone.findMany({
     orderBy: { name: 'asc' },
+  })
+}
+
+export async function toggleScheduleSuspension(scheduleId: number, isSuspended: boolean) {
+  return prisma.schedule.update({
+    where: { id: scheduleId },
+    data: { isSuspended },
+  })
+}
+
+export async function toggleWaypointSuspension(waypointId: number, isSuspended: boolean) {
+  return prisma.waypoint.update({
+    where: { id: waypointId },
+    data: { isSuspended },
+  })
+}
+
+/**
+ * Añade un waypoint a un schedule existente desde el mapa.
+ * La secuencia se asigna como el máximo actual + 1.
+ */
+export async function addMapWaypoint(data: {
+  scheduleId: number
+  lat: number
+  lng: number
+  originPoint: string
+  destinationPoint: string
+}): Promise<FlatSchedule> {
+  // Buscar la secuencia máxima actual
+  const maxSeq = await prisma.waypoint.aggregate({
+    where: { scheduleId: data.scheduleId },
+    _max: { sequence: true },
+  })
+  const nextSeq = (maxSeq._max.sequence ?? 0) + 1
+
+  const waypoint = await prisma.waypoint.create({
+    data: {
+      scheduleId: data.scheduleId,
+      sequence: nextSeq,
+      originPoint: data.originPoint,
+      destinationPoint: data.destinationPoint,
+      lat: data.lat,
+      lng: data.lng,
+      hasCampanio: false,
+      originalId: 0,
+    },
+  })
+
+  const fullSchedule = await prisma.schedule.findUnique({
+    where: { id: data.scheduleId },
+    include: {
+      route: { include: { zone: true } },
+      waypoints: { where: { id: waypoint.id } },
+    },
+  })
+
+  return waypointToFlatSchedule(waypoint, fullSchedule!)
+}
+
+/**
+ * Inserta un punto de desvío (Via Point) invisible en la secuencia.
+ */
+export async function insertViaPoint(data: {
+  scheduleId: number
+  lat: number
+  lng: number
+  afterSequence: number
+}): Promise<FlatSchedule> {
+  return prisma.$transaction(async (tx) => {
+    // Empujar hacia adelante todos los waypoints posteriores
+    await tx.waypoint.updateMany({
+      where: {
+        scheduleId: data.scheduleId,
+        sequence: { gt: data.afterSequence },
+      },
+      data: { sequence: { increment: 1 } },
+    })
+
+    const waypoint = await tx.waypoint.create({
+      data: {
+        scheduleId: data.scheduleId,
+        sequence: data.afterSequence + 1,
+        originPoint: 'VIA_POINT',
+        destinationPoint: 'VIA_POINT',
+        lat: data.lat,
+        lng: data.lng,
+        hasCampanio: false,
+        originalId: 0,
+      },
+    })
+
+    const fullSchedule = await tx.schedule.findUnique({
+      where: { id: data.scheduleId },
+      include: {
+        route: { include: { zone: true } },
+        waypoints: { where: { id: waypoint.id } },
+      },
+    })
+
+    return waypointToFlatSchedule(waypoint, fullSchedule!)
+  })
+}
+
+/**
+ * Elimina un waypoint del mapa por su ID.
+ */
+export async function deleteMapWaypoint(waypointId: number) {
+  return prisma.waypoint.delete({ where: { id: waypointId } })
+}
+
+/**
+ * Elimina una ruta completa (Schedule + Route) a partir del scheduleId.
+ * Los waypoints se eliminan por cascada (onDelete: Cascade en el schema).
+ */
+export async function deleteFullRoute(scheduleId: number) {
+  // Buscar el routeId antes de borrar el schedule
+  const schedule = await prisma.schedule.findUnique({
+    where: { id: scheduleId },
+    select: { routeId: true },
+  })
+  if (!schedule) throw new Error('Schedule no encontrado')
+
+  // Eliminar el schedule (y sus waypoints en cascada)
+  await prisma.schedule.delete({ where: { id: scheduleId } })
+
+  // Si la route ya no tiene más schedules, eliminarla también
+  const remaining = await prisma.schedule.count({ where: { routeId: schedule.routeId } })
+  if (remaining === 0) {
+    await prisma.route.delete({ where: { id: schedule.routeId } })
+  }
+}
+
+/**
+ * Crea una ruta completa desde el mapa: Route + Schedule + múltiples Waypoints
+ */
+export async function createFullRoute(data: {
+  zoneName: string
+  shift: string
+  routeType: string
+  days: string[]
+  waypoints: { 
+    lat: number; 
+    lng: number; 
+    originPoint: string;
+    destinationPoint: string;
+    departureTime: string;
+    arrivalTime: string;
+    hasCampanio: boolean;
+    observations: string;
+  }[]
+}) {
+  return prisma.$transaction(async (tx) => {
+    // 1. Zona
+    let zone = await tx.zone.findUnique({ where: { name: data.zoneName } })
+    if (!zone) {
+      zone = await tx.zone.create({ data: { name: data.zoneName } })
+    }
+
+    // 2. Ruta
+    const route = await tx.route.create({
+      data: {
+        zoneId: zone.id,
+        shift: data.shift as any,
+        type: data.routeType as any,
+      },
+    })
+
+    // 3. Schedule
+    const schedule = await tx.schedule.create({
+      data: {
+        routeId: route.id,
+        days: data.days as any,
+      },
+    })
+
+    // 4. Waypoints
+    const createdWaypoints = []
+    for (let i = 0; i < data.waypoints.length; i++) {
+      const wp = data.waypoints[i]
+      const nextWp = data.waypoints[i + 1]
+      
+      const waypoint = await tx.waypoint.create({
+        data: {
+          scheduleId: schedule.id,
+          sequence: i + 1,
+          originPoint: wp.originPoint,
+          destinationPoint: wp.destinationPoint,
+          departureTime: wp.departureTime || null,
+          arrivalTime: wp.arrivalTime || null,
+          hasCampanio: wp.hasCampanio,
+          observations: wp.observations || null,
+          originalId: 0,
+          lat: wp.lat,
+          lng: wp.lng,
+        },
+      })
+      createdWaypoints.push(waypoint)
+    }
+
+    return { route, schedule, waypoints: createdWaypoints }
+  })
+}
+
+export async function toggleSimulation(scheduleId: number, isSimulating: boolean) {
+  return await prisma.schedule.update({
+    where: { id: scheduleId },
+    data: {
+      isSimulating,
+      simulationStartTime: isSimulating ? new Date() : null,
+    },
   })
 }

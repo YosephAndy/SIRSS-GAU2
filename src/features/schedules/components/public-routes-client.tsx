@@ -2,14 +2,14 @@
 
 import React, { useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
-import { Search, MapPin, Clock, Calendar, Truck, ChevronDown, ChevronUp, X, List } from 'lucide-react'
+import { Search, MapPin, Clock, Calendar, Truck, ChevronDown, ChevronUp, X, List, Maximize, Minimize } from 'lucide-react'
 import type { FlatSchedule } from '@/features/schedules/services/schedule.service'
 import useSWR from 'swr'
 
 const fetcher = (url: string) => fetch(url).then(res => res.json())
 
 // Cargamos el map viewer dinámicamente
-const RouteMapViewer = dynamic<{ routeKey: string; dataset: FlatSchedule[] }>(
+const RouteMapViewer = dynamic<{ routeKey: string; dataset: FlatSchedule[]; isFullscreen?: boolean; localSimStartTime?: Date | null }>(
   () => import('@/features/schedules/components/route-map-viewer').then((m) => m.RouteMapViewer as any),
   { ssr: false, loading: () => <div className="h-[320px] bg-slate-100 animate-pulse rounded-2xl" /> }
 )
@@ -56,11 +56,11 @@ export function PublicRoutesClient({ dataset }: PublicRoutesClientProps) {
     const pool = new Set<string>()
     currentDataset.forEach((s) => {
       if (s.zoneName) pool.add(s.zoneName)
-      if (s.originPoint) pool.add(s.originPoint)
-      if (s.destinationPoint) pool.add(s.destinationPoint)
+      if (s.originPoint && s.originPoint !== 'VIA_POINT') pool.add(s.originPoint)
+      if (s.destinationPoint && s.destinationPoint !== 'VIA_POINT') pool.add(s.destinationPoint)
     })
     return Array.from(pool).sort()
-  }, [dataset])
+  }, [currentDataset])
 
   const filteredSuggestions = useMemo(() => {
     if (!searchQuery.trim()) return []
@@ -96,13 +96,14 @@ export function PublicRoutesClient({ dataset }: PublicRoutesClientProps) {
     })
     Array.from(map.values()).forEach((g) => {
       g.waypoints.sort((a, b) => a.sequence - b.sequence)
-      if (g.waypoints.length > 0) {
-        const last = g.waypoints[g.waypoints.length - 1]
-        g.coverage = `${g.waypoints[0].originPoint} → ${last.destinationPoint}`
+      const realWaypoints = g.waypoints.filter(w => w.originPoint !== 'VIA_POINT')
+      if (realWaypoints.length > 0) {
+        const last = realWaypoints[realWaypoints.length - 1]
+        g.coverage = `${realWaypoints[0].originPoint} → ${last.destinationPoint || last.originPoint}`
       }
     })
     return Array.from(map.values())
-  }, [dataset])
+  }, [currentDataset])
 
   // Filtrar según búsqueda
   const filteredRoutes = useMemo(() => {
@@ -113,8 +114,8 @@ export function PublicRoutesClient({ dataset }: PublicRoutesClientProps) {
       if (route.days.join(', ').toLowerCase().includes(term)) return true
       return route.waypoints.some(
         (w) =>
-          w.originPoint.toLowerCase().includes(term) ||
-          w.destinationPoint.toLowerCase().includes(term)
+          (w.originPoint.toLowerCase().includes(term) && w.originPoint !== 'VIA_POINT') ||
+          (w.destinationPoint.toLowerCase().includes(term) && w.destinationPoint !== 'VIA_POINT')
       )
     })
   }, [groupedRoutes, activeSearch])
@@ -230,7 +231,7 @@ export function PublicRoutesClient({ dataset }: PublicRoutesClientProps) {
             </div>
             <h3 className="text-2xl font-bold text-slate-800 mb-2">Sin resultados</h3>
             <p className="text-slate-500 max-w-md mx-auto">
-              No encontramos rutas que pasen por "{activeSearch}".
+              No encontramos rutas que pasen por &quot;{activeSearch}&quot;.
             </p>
             <button onClick={handleClear} className="mt-6 px-4 py-2 bg-slate-100 text-slate-600 rounded-lg font-semibold hover:bg-slate-200 transition-colors">
               Ver todas las rutas
@@ -239,7 +240,7 @@ export function PublicRoutesClient({ dataset }: PublicRoutesClientProps) {
         ) : (
           <div className="space-y-6">
             <p className="text-slate-500 text-sm font-medium mt-2">
-              {filteredRoutes.length} ruta{filteredRoutes.length > 1 ? 's' : ''} encontrada{filteredRoutes.length > 1 ? 's' : ''} para "{activeSearch}"
+              {filteredRoutes.length} ruta{filteredRoutes.length > 1 ? 's' : ''} encontrada{filteredRoutes.length > 1 ? 's' : ''} para &quot;{activeSearch}&quot;
             </p>
             {filteredRoutes.map((route, i) => {
               const isExpanded = expandedRouteKey === route.key
@@ -270,6 +271,26 @@ function RouteCard({ route, isExpanded, colorIdx, dataset, onToggle }: {
   onToggle: () => void
 }) {
   const [showSequence, setShowSequence] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [localSimStartTime, setLocalSimStartTime] = useState<Date | null>(null)
+
+  const toggleFullscreen = () => {
+    if (isFullscreen) {
+      setIsFullscreen(false)
+      setLocalSimStartTime(null)
+    } else {
+      setIsFullscreen(true)
+    }
+  }
+
+  const toggleLocalSimulation = () => {
+    if (localSimStartTime) {
+      setLocalSimStartTime(null)
+    } else {
+      // Start randomly between 0 and 3 minutes ago
+      setLocalSimStartTime(new Date(Date.now() - Math.random() * 180000))
+    }
+  }
 
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow group">
@@ -333,16 +354,18 @@ function RouteCard({ route, isExpanded, colorIdx, dataset, onToggle }: {
                   <ul className="space-y-4 relative">
                     {(() => {
                       const nodes = []
-                      route.waypoints.forEach((w, i) => {
+                      const realWaypoints = route.waypoints.filter(w => w.originPoint !== 'VIA_POINT')
+                      
+                      realWaypoints.forEach((w, i) => {
                         if (i === 0) {
                           nodes.push({ title: w.originPoint, arrival: null, departure: w.waypointDepartureTime, isFirst: true, isLast: false })
                         } else {
-                          nodes.push({ title: w.originPoint, arrival: route.waypoints[i - 1].waypointArrivalTime, departure: w.waypointDepartureTime, isFirst: false, isLast: false })
+                          nodes.push({ title: w.originPoint, arrival: realWaypoints[i - 1].waypointArrivalTime, departure: w.waypointDepartureTime, isFirst: false, isLast: false })
                         }
                       })
-                      if (route.waypoints.length > 0) {
-                        const lastW = route.waypoints[route.waypoints.length - 1]
-                        nodes.push({ title: lastW.destinationPoint, arrival: lastW.waypointArrivalTime, departure: null, isFirst: false, isLast: true })
+                      if (realWaypoints.length > 0) {
+                        const lastW = realWaypoints[realWaypoints.length - 1]
+                        nodes.push({ title: lastW.destinationPoint || lastW.originPoint, arrival: lastW.waypointArrivalTime, departure: null, isFirst: false, isLast: true })
                       }
                       return nodes.map((node, i) => (
                         <li key={i} className="flex gap-4">
@@ -395,12 +418,36 @@ function RouteCard({ route, isExpanded, colorIdx, dataset, onToggle }: {
           </div>
 
           {/* Mapa Grande */}
-          <div>
-            <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest mb-3">
-              Mapa del recorrido
-            </h4>
-            <div className="rounded-2xl overflow-hidden shadow-sm border border-slate-200 h-[500px]">
-              <RouteMapViewer routeKey={route.key} dataset={dataset} />
+          <div className={isFullscreen ? "fixed inset-0 z-[100] bg-slate-50 flex flex-col h-screen w-screen p-4 md:p-8" : ""}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-bold text-slate-700 uppercase tracking-widest">
+                Mapa del recorrido {isFullscreen && `- ${route.zoneName}`}
+              </h4>
+              <div className="flex gap-2">
+                {isFullscreen && (
+                  <button
+                    onClick={toggleLocalSimulation}
+                    className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-sm transition-colors border ${
+                      localSimStartTime 
+                        ? 'bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-200' 
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                    }`}
+                  >
+                    <Truck size={14} />
+                    {localSimStartTime ? 'Detener simulación' : 'Ver camión en tiempo real'}
+                  </button>
+                )}
+                <button
+                  onClick={toggleFullscreen}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg shadow-sm hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                >
+                  {isFullscreen ? <><Minimize size={14} /> Salir de pantalla completa</> : <><Maximize size={14} /> Pantalla completa</>}
+                </button>
+              </div>
+            </div>
+            
+            <div className={`rounded-2xl overflow-hidden shadow-sm border border-slate-200 bg-white ${isFullscreen ? 'flex-1 flex flex-col min-h-0' : 'h-[500px]'}`}>
+              <RouteMapViewer routeKey={route.key} dataset={dataset} isFullscreen={isFullscreen} localSimStartTime={localSimStartTime} />
             </div>
           </div>
         </div>

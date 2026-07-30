@@ -2,8 +2,10 @@
 
 import React, { useState } from 'react'
 import useSWR from 'swr'
-import { Clock, Calendar, Search, X, MapPin, Map } from 'lucide-react'
+import { Search, X, MapPin, Map, Bell, BellRing, Loader2 } from 'lucide-react'
 import type { FlatSchedule } from '@/features/schedules/services/schedule.service'
+import { toggleReminderAction, getUserRemindersAction } from '@/features/schedules/actions/reminder.actions'
+import MobileBottomNav from '@/components/ui/MobileBottomNav'
 
 const fetcher = (url: string) => fetch(url).then((res) => {
   if (!res.ok) throw new Error('Error al cargar los horarios')
@@ -12,13 +14,7 @@ const fetcher = (url: string) => fetch(url).then((res) => {
 
 const DAY_ORDER = ['LUNES', 'MARTES', 'MIERCOLES', 'JUEVES', 'VIERNES', 'SABADO', 'DOMINGO']
 
-const ZONE_COLORS = [
-  'from-emerald-400 to-emerald-600',
-  'from-teal-400 to-teal-600',
-  'from-green-400 to-green-600',
-  'from-lime-400 to-lime-600',
-  'from-emerald-500 to-teal-500',
-]
+
 
 const SHIFT_COLORS: Record<string, string> = {
   'MANANA': 'bg-gradient-to-r from-sky-50 to-blue-50 text-sky-700 border-sky-200',
@@ -45,10 +41,26 @@ const formatTime = (timeStr: string | null | undefined) => {
   }
 }
 
+const DAY_NAMES: Record<string, string> = {
+  LUNES: 'Lunes', MARTES: 'Martes', MIERCOLES: 'Miércoles',
+  JUEVES: 'Jueves', VIERNES: 'Viernes', SABADO: 'Sábado', DOMINGO: 'Domingo',
+}
+
 export default function SchedulesPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [activeSearch, setActiveSearch] = useState('')
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [reminders, setReminders] = useState<Set<number>>(new Set())
+  const [loadingReminderId, setLoadingReminderId] = useState<number | null>(null)
+  const [toastMsg, setToastMsg] = useState<{msg: string, isError: boolean} | null>(null)
+
+  React.useEffect(() => {
+    getUserRemindersAction().then(res => {
+      if (res.success && res.reminders) {
+        setReminders(new Set(res.reminders))
+      }
+    })
+  }, [])
 
   // Obtener TODOS los horarios solo una vez para generar las sugerencias de autocompletado
   const { data: allSchedules = [] } = useSWR<FlatSchedule[]>('/api/schedules', fetcher, {
@@ -122,39 +134,60 @@ export default function SchedulesPage() {
 
   const schedulesSafe = schedules ?? []
 
-  const schedulesByZone = schedulesSafe.reduce<Record<string, FlatSchedule[]>>((acc, s) => {
+  const scheduleGroups = schedulesSafe.reduce<Record<string, {
+    scheduleId: number; zoneName: string; shift: string; days: string[]; waypoints: FlatSchedule[]; isSuspended: boolean;
+  }>>((acc, s) => {
     const zoneName = s.zoneName || 'Sin Zona'
-    
-    if (!/^ZONA\s*0?[1-5]$/i.test(zoneName)) {
-      return acc
+    if (!/^ZONA\s*0?[1-5]$/i.test(zoneName)) return acc
+    const key = `${s.scheduleId}`
+    if (!acc[key]) {
+      acc[key] = { scheduleId: s.scheduleId, zoneName, shift: s.shift, days: s.days, waypoints: [], isSuspended: s.isSuspended }
     }
-
-    if (!acc[zoneName]) acc[zoneName] = []
-    acc[zoneName].push(s)
+    acc[key].waypoints.push(s)
     return acc
   }, {})
 
-  const today = new Date()
-  const todayDayMap = [6, 0, 1, 2, 3, 4, 5]
-
-  const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-  const currentMonth = monthNames[today.getMonth()]
-  const currentYear = today.getFullYear()
-
-  const daysInMonth = new Date(currentYear, today.getMonth() + 1, 0).getDate()
-  const firstDayOfMonth = new Date(currentYear, today.getMonth(), 1).getDay()
-  const todayDate = today.getDate()
-
-  const collectionDayIndices = new Set<number>()
-  schedulesSafe.forEach(s => {
-    s.days?.forEach(d => {
-      const idx = DAY_ORDER.indexOf(d)
-      if (idx !== -1) collectionDayIndices.add(idx)
-    })
+  Object.values(scheduleGroups).forEach(g => {
+    g.waypoints.sort((a, b) => a.sequence - b.sequence)
   })
 
+  const handleToggleReminder = async (waypointId: number, scheduleId: number, timeStr: string | null) => {
+    if (!timeStr) {
+      setToastMsg({ msg: 'No se puede activar recordatorio: no hay hora definida.', isError: true })
+      return
+    }
+    
+    setLoadingReminderId(waypointId)
+    const res = await toggleReminderAction(waypointId, scheduleId, timeStr)
+    if (res.success) {
+      setReminders(prev => {
+        const next = new Set(prev)
+        if (res.isReminding) next.add(waypointId)
+        else next.delete(waypointId)
+        return next
+      })
+      setToastMsg({ msg: res.message || '', isError: false })
+      setTimeout(() => setToastMsg(null), 5000)
+    } else {
+      setToastMsg({ msg: res.message || 'Error de red.', isError: true })
+      setTimeout(() => setToastMsg(null), 5000)
+      if (res.message?.includes('iniciar sesión')) {
+        // Redirigir al login en el futuro o mostrar banner
+      }
+    }
+    setLoadingReminderId(null)
+  }
+
   return (
-    <div className="min-h-screen bg-[#f8fafc] font-sans pb-20">
+    <div className="min-h-screen bg-[#f8fafc] font-sans pb-20 relative">
+      {/* Toast Notification para Recordatorio */}
+      {toastMsg && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-full font-bold shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5 ${toastMsg.isError ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'}`}>
+          {toastMsg.isError ? <X size={20} /> : <BellRing size={20} />}
+          {toastMsg.msg}
+        </div>
+      )}
+
       <div className="bg-white border-b border-slate-200 pt-12 pb-16 px-4 relative shadow-sm z-30">
         <div className="max-w-[1200px] mx-auto relative z-30 text-center">
           <h1 className="text-3xl md:text-4xl font-extrabold text-slate-800 mb-4 tracking-tight">
@@ -223,10 +256,10 @@ export default function SchedulesPage() {
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-4 xl:px-12 mt-8 relative z-20">
-        <div className="grid lg:grid-cols-12 gap-8 items-start">
+      <div className="max-w-[1200px] mx-auto px-4 xl:px-8 mt-8 relative z-20">
+        <div className="flex flex-col gap-6">
           
-          <div className="lg:col-span-8 flex flex-col gap-6">
+          <div className="flex flex-col gap-6">
             {!activeSearch ? (
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col items-center justify-center text-center">
                 <div className="w-full h-64 bg-emerald-50 relative overflow-hidden flex items-center justify-center">
@@ -265,7 +298,7 @@ export default function SchedulesPage() {
                   <p className="text-red-600/80 mt-1">{error}</p>
                 </div>
               </div>
-            ) : Object.keys(schedulesByZone).length === 0 ? (
+            ) : Object.keys(scheduleGroups).length === 0 ? (
               <div className="bg-white p-16 rounded-3xl border border-slate-200 shadow-sm text-center">
                 <div className="w-24 h-24 bg-gradient-to-br from-slate-50 to-slate-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
                   <MapPin size={48} className="text-slate-300" />
@@ -280,141 +313,207 @@ export default function SchedulesPage() {
               </div>
             ) : (
               <div className="space-y-8">
-                {Object.entries(schedulesByZone).map(([zoneName, zoneSchedules], i) => (
-                  <div key={zoneName} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow group">
-                    <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white">
-                      <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${ZONE_COLORS[i % ZONE_COLORS.length]} flex items-center justify-center text-white shadow-md`}>
-                          <MapPin size={22} className="stroke-[2.5]" />
-                        </div>
-                        <div>
-                          <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">{zoneName}</h2>
-                          <p className="text-emerald-600 text-sm font-semibold">{zoneSchedules.length} puntos de recolección encontrados</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="p-6">
-                      <div className="grid gap-5">
-                        {zoneSchedules.map((schedule) => (
-                          <div key={schedule.id} className="relative flex flex-col gap-4 p-6 rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50/50 hover:border-emerald-300 hover:shadow-lg hover:shadow-emerald-500/5 hover:-translate-y-0.5 transition-all duration-300">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
-                              <div className="flex items-center gap-2.5 text-slate-800 font-bold">
-                                <div className="p-1.5 bg-emerald-100/50 rounded-lg">
-                                  <Calendar size={18} className="text-emerald-600" />
-                                </div>
-                                <span className="leading-tight text-[15px]">{schedule.days?.join(', ') || ''}</span>
-                              </div>
-                              <div className={`inline-flex items-center justify-center px-4 py-1.5 rounded-full text-xs font-bold border w-fit shadow-sm ${SHIFT_COLORS[schedule.shift] || 'bg-slate-50 text-slate-700 border-slate-200'}`}>
-                                TURNO {formatShift(schedule.shift)}
-                              </div>
-                            </div>
-                            <div className="grid sm:grid-cols-[1fr_auto] gap-6 sm:gap-10 items-center mt-1">
-                              <div className="flex flex-col gap-5">
-                                <div className="flex flex-col">
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Punto de Inicio</span>
-                                  <div className="flex items-start gap-3">
-                                    <div className="mt-1.5 w-2.5 h-2.5 rounded-full bg-slate-300 shadow-sm shrink-0"></div>
-                                    <span className="font-semibold text-slate-700 text-[13px] leading-relaxed">{schedule.originPoint}</span>
-                                  </div>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Punto de Destino</span>
-                                  <div className="flex items-start gap-3">
-                                    <div className="mt-1.5 w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/40 shrink-0"></div>
-                                    <span className="font-semibold text-slate-700 text-[13px] leading-relaxed">{schedule.destinationPoint}</span>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-3 sm:pl-8 sm:border-l border-slate-200 bg-white sm:bg-transparent p-4 sm:p-0 rounded-xl shadow-sm border sm:border-0 sm:shadow-none">
-                                <div className="flex flex-col sm:items-end">
-                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 hidden sm:block">Salida</span>
-                                  <div className="flex items-center gap-1.5 text-slate-600">
-                                    <Clock size={14} className="text-slate-400" />
-                                    <span className="font-mono font-medium text-[13px]">{formatTime(schedule.waypointDepartureTime)}</span>
-                                  </div>
-                                </div>
-                                <div className="hidden sm:block w-px h-6 bg-slate-200/80 my-1"></div>
-                                <div className="flex flex-col sm:items-end">
-                                  <span className="text-[10px] font-bold text-emerald-600/80 uppercase tracking-widest mb-1 hidden sm:block">Llegada Estimada</span>
-                                  <div className="flex items-center gap-1.5 text-emerald-700 font-bold bg-emerald-50/80 px-2 py-1 rounded-md">
-                                    <Clock size={14} className="text-emerald-600" />
-                                    <span className="font-mono text-[13px]">{formatTime(schedule.waypointArrivalTime)}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="lg:col-span-4 lg:sticky lg:top-8">
-            <div className="bg-gradient-to-b from-white to-slate-50 rounded-3xl border border-slate-200 shadow-sm p-6 md:p-8">
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800">Calendario</h3>
-                  <p className="text-sm font-medium text-emerald-600 mt-1 capitalize">{currentMonth} {currentYear}</p>
-                </div>
-                <div className="w-10 h-10 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 shadow-sm">
-                  <Calendar size={20} />
-                </div>
-              </div>
-              <div className="grid grid-cols-7 gap-y-4 gap-x-2 text-center mb-6">
-                {['D', 'L', 'M', 'M', 'J', 'V', 'S'].map((d, i) => (
-                  <div key={i} className="text-xs font-bold text-slate-400">{d}</div>
-                ))}
-                {Array.from({ length: firstDayOfMonth }, (_, i) => (
-                  <div key={`empty-${i}`}></div>
-                ))}
-                {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((d) => {
-                  const dateObj = new Date(currentYear, today.getMonth(), d)
-                  const dayOfWeek = dateObj.getDay()
-                  const dayIndex = todayDayMap[dayOfWeek]
-                  const isCollectionDay = collectionDayIndices.has(dayIndex)
-                  const isToday = d === todayDate
+                {Object.values(scheduleGroups).map((group) => {
+                  // Construir nodos del timeline a partir de los waypoints
+                  type TimelineNode = { location: string; time: string | null; type: 'start' | 'stop' | 'end'; obs: string; isSuspended: boolean }
+                  const nodes: TimelineNode[] = []
+                  group.waypoints.forEach((w, i) => {
+                    if (i === 0) {
+                      nodes.push({ location: w.originPoint, time: w.waypointDepartureTime, type: 'start', obs: 'Punto de partida del camión.', isSuspended: w.isWaypointSuspended })
+                    } else {
+                      nodes.push({ location: w.originPoint, time: w.waypointDepartureTime, type: 'stop', obs: w.observations || 'Recolección aquí. Asegúrese de tener sus desechos listos.', isSuspended: w.isWaypointSuspended })
+                    }
+                  })
+                  if (group.waypoints.length > 0) {
+                    const last = group.waypoints[group.waypoints.length - 1]
+                    nodes.push({ location: last.destinationPoint, time: last.waypointArrivalTime, type: 'end', obs: 'Última parada del recorrido.', isSuspended: last.isWaypointSuspended })
+                  }
+                  const NODE_LABELS: Record<string, string> = {
+                    start: 'INICIO RUTA',
+                    stop: 'PARADA DE RECOLECCIÓN',
+                    end: 'FIN RUTA',
+                  }
+
                   return (
-                    <div key={d} className="relative flex justify-center items-center">
-                      <div
-                        className={`w-9 h-9 flex items-center justify-center rounded-xl text-sm transition-all duration-300
-                          ${isToday 
-                            ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-bold shadow-md shadow-emerald-500/30 scale-110 z-10' 
-                            : isCollectionDay 
-                              ? 'bg-emerald-50 text-emerald-800 font-bold hover:bg-emerald-100 cursor-pointer border border-emerald-100/50' 
-                              : 'text-slate-600 hover:bg-white hover:shadow-sm font-medium'
-                          }
-                        `}
-                      >
-                        {d}
-                      </div>
-                      {isCollectionDay && !isToday && (
-                        <div className="absolute bottom-0 w-1 h-1 rounded-full bg-emerald-500"></div>
+                    <div key={group.scheduleId} className={`bg-white rounded-3xl border shadow-sm overflow-hidden transition-shadow ${group.isSuspended ? 'border-red-200 shadow-red-100/50' : 'border-slate-200 hover:shadow-md'}`}>
+
+                      {/* Banner de Suspensión */}
+                      {group.isSuspended && (
+                        <div className="bg-red-500 text-white px-6 py-3 flex items-center justify-center gap-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                          <span className="font-extrabold uppercase tracking-wide text-sm">Servicio Suspendido Temporalmente</span>
+                        </div>
                       )}
+
+                      {/* Header verde */}
+                      <div className="bg-gradient-to-r from-emerald-600 to-emerald-500 px-6 py-4 flex items-center gap-3">
+                        <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+                          <MapPin size={18} className="text-white stroke-[2.5]" />
+                        </div>
+                        <h2 className="text-white font-extrabold text-base md:text-lg tracking-widest uppercase">
+                          Horario de Recolección — {group.zoneName}
+                        </h2>
+                      </div>
+
+                      {/* Sub-header: días y turno */}
+                      <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/80">
+                        <p className="text-base font-semibold text-slate-800">
+                          <span className="font-extrabold text-slate-900">Días de servicio:</span>{' '}
+                          <span className="text-emerald-700 font-bold">
+                            {group.days.map(d => DAY_NAMES[d] || d).join(', ')}
+                          </span>
+                        </p>
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
+                          SHIFT_COLORS[group.shift] || 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}>
+                          TURNO {formatShift(group.shift)}
+                        </span>
+                      </div>
+
+                      {/* Mensaje informativo para el ciudadano */}
+                      {activeSearch && (
+                        <div className="px-6 pt-5 pb-1">
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 shadow-sm">
+                            <p className="text-base text-emerald-900 leading-relaxed font-medium mb-3">
+                              <span className="font-bold text-lg">♻️ Estimado(a) ciudadano(a) del distrito de Wanchaq:</span>
+                            </p>
+                            <p className="text-base text-emerald-900 leading-relaxed font-medium mb-3">
+                              Le informamos que el camión recolector de residuos sólidos pasará por <span className="font-bold uppercase">{
+                                nodes.find(n => n.location.toLowerCase().includes(activeSearch.toLowerCase().trim()))?.location || activeSearch
+                              }</span> los días <span className="font-bold lowercase">{group.days.map(d => DAY_NAMES[d] || d).join(', ')}</span>, aproximadamente a las <span className="font-bold">{
+                                nodes.find(n => n.location.toLowerCase().includes(activeSearch.toLowerCase().trim()))?.time 
+                                  ? formatTime(nodes.find(n => n.location.toLowerCase().includes(activeSearch.toLowerCase().trim()))!.time) 
+                                  : '--:--'
+                              }</span>.
+                            </p>
+                            <p className="text-base text-emerald-900 leading-relaxed font-medium mb-3">
+                              Le recomendamos tener sus residuos listos y sacarlos unos minutos antes de la hora programada, para facilitar una recolección oportuna y mantener limpio nuestro distrito.
+                            </p>
+                            <p className="text-base text-emerald-900 leading-relaxed font-medium">
+                              Agradecemos su colaboración y compromiso con el cuidado del medio ambiente. 🌱
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Body: ilustración + timeline */}
+                      <div className="p-6 flex flex-col md:flex-row gap-8 items-start">
+
+                        {/* Izquierda: ilustración del camión */}
+                        <div className="flex-shrink-0 flex flex-col items-center gap-3 md:w-44">
+                          <div className="w-44 h-36 flex items-center justify-center">
+                            <img
+                              src="/images/garbage-truck.jpg"
+                              alt="Camión recolector"
+                              className="w-full h-full object-contain drop-shadow-md"
+                            />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs font-bold text-emerald-600 uppercase tracking-wide">Camión Recolector</p>
+                            <p className="text-[10px] text-slate-400 font-medium mt-0.5">
+                              {nodes.length} parada{nodes.length !== 1 ? 's' : ''} en ruta
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Derecha: timeline */}
+                        <div className="flex-1 min-w-0">
+                          {nodes.map((node, ni) => {
+                            // ✅ Solo resaltar en verde si la ubicación contiene la búsqueda activa
+                            const searchTerm = activeSearch.toLowerCase().trim()
+                            const isMatch = searchTerm.length > 0
+                              ? node.location.toLowerCase().includes(searchTerm)
+                              : false
+                            const isLast = ni === nodes.length - 1
+                            return (
+                              <div key={ni} className="flex gap-4">
+
+                                {/* Columna del marcador + conector */}
+                                <div className="flex flex-col items-center w-14 shrink-0">
+                                  {/* Señal STOP octagonal: rojo si está suspendida, verde si coincide, gris por defecto */}
+                                  <div
+                                    className={`w-12 h-12 flex items-center justify-center text-[9px] font-extrabold text-white tracking-wider shrink-0 z-10 transition-all ${
+                                      node.isSuspended
+                                        ? 'bg-red-500 shadow-lg shadow-red-500/30 line-through decoration-white/50'
+                                        : isMatch
+                                          ? 'bg-emerald-500 shadow-lg shadow-emerald-500/30'
+                                          : 'bg-slate-400'
+                                    }`}
+                                    style={{ clipPath: 'polygon(30% 0%,70% 0%,100% 30%,100% 70%,70% 100%,30% 100%,0% 70%,0% 30%)' }}
+                                  >
+                                    STOP
+                                  </div>
+                                  {/* Conector con flecha */}
+                                  {!isLast && (
+                                    <div className="flex flex-col items-center flex-1 py-1" style={{ minHeight: '44px' }}>
+                                      <div className={`w-0.5 flex-1 ${
+                                        node.isSuspended ? 'bg-red-200' : isMatch ? 'bg-emerald-400' : 'bg-slate-300'
+                                      }`} />
+                                      <svg width="10" height="6" viewBox="0 0 10 6" className="shrink-0" fill={node.isSuspended ? '#fecaca' : isMatch ? '#34d399' : '#cbd5e1'}>
+                                        <path d="M5 6L0 0h10z"/>
+                                      </svg>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Contenido de la parada */}
+                                <div className={`flex-1 min-w-0 ${!isLast ? 'pb-6' : 'pb-0'} pt-1 ${node.isSuspended ? 'opacity-60' : ''}`}>
+                                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                    <p className="font-extrabold text-slate-800 text-sm md:text-base leading-tight">
+                                      <span className={`font-mono ${node.isSuspended ? 'line-through text-slate-500' : ''}`}>{node.time ? formatTime(node.time) : '--:--'}</span>{' '}
+                                      <span className={isMatch && !node.isSuspended ? 'text-emerald-600' : 'text-slate-700'}>
+                                        — {node.isSuspended ? 'PARADA SUSPENDIDA' : NODE_LABELS[node.type]}
+                                      </span>
+                                    </p>
+                                    {isMatch && !node.isSuspended && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex items-center gap-1 border border-emerald-200 animate-pulse shadow-sm">
+                                        📍 Tu calle
+                                      </span>
+                                    )}
+                                    {/* Botón de Recordatorio */}
+                                    {isMatch && !node.isSuspended && node.time && (
+                                      <button
+                                        onClick={() => {
+                                          const wpOriginalId = group.waypoints[ni].originalId; // Use originalId for waypoint id
+                                          handleToggleReminder(wpOriginalId, group.scheduleId, node.time)
+                                        }}
+                                        disabled={loadingReminderId === group.waypoints[ni].originalId}
+                                        className={`ml-auto text-xs px-3 py-1.5 rounded-full font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                                          reminders.has(group.waypoints[ni].originalId)
+                                            ? 'bg-emerald-500 text-white hover:bg-emerald-600'
+                                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                      >
+                                        {loadingReminderId === group.waypoints[ni].originalId ? (
+                                          <Loader2 size={14} className="animate-spin" />
+                                        ) : reminders.has(group.waypoints[ni].originalId) ? (
+                                          <BellRing size={14} />
+                                        ) : (
+                                          <Bell size={14} />
+                                        )}
+                                        {reminders.has(group.waypoints[ni].originalId) ? 'Recordatorio Activado' : 'Recordarme'}
+                                      </button>
+                                    )}
+                                  </div>
+                                  <p className={`font-semibold text-slate-800 ${node.isSuspended ? 'line-through text-slate-500' : ''}`}>{node.location}</p>
+                                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">{node.obs}</p>
+                                </div>
+
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                      </div>
                     </div>
                   )
                 })}
               </div>
-              <div className="mt-6 pt-5 border-t border-slate-200/60 flex flex-col gap-3">
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-md bg-emerald-500 shadow-sm shadow-emerald-500/30"></div>
-                    <span className="font-medium text-slate-600">Día Actual</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-md bg-emerald-50 border border-emerald-100"></div>
-                    <span className="font-medium text-slate-600">Día de Recolección</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </div>
+      <MobileBottomNav />
     </div>
   )
 }

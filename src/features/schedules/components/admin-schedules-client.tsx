@@ -3,9 +3,9 @@
 import React, { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { PlusCircle, Trash2, MapPin, X, AlertCircle, CheckCircle2, Edit2, List } from 'lucide-react'
+import { PlusCircle, Trash2, MapPin, X, AlertCircle, CheckCircle2, Edit2, List, AlertOctagon } from 'lucide-react'
 import { scheduleFormSchema, type ScheduleFormValues } from '../schemas/schedule.schema'
-import { createScheduleAction, deleteScheduleAction, updateScheduleAction } from '../actions/schedule.actions'
+import { createScheduleAction, deleteScheduleAction, updateScheduleAction, toggleScheduleSuspensionAction, toggleWaypointSuspensionAction } from '../actions/schedule.actions'
 import type { FlatSchedule } from '../services/schedule.service'
 
 interface AdminSchedulesClientProps {
@@ -85,6 +85,7 @@ export function AdminSchedulesClient({ initialDataset }: AdminSchedulesClientPro
   }
 
   const handleDelete = async (id: number) => {
+    if (!window.confirm('¿Está seguro de eliminar este registro?')) return
     setDeletingId(id)
     startTransition(async () => {
       const result = await deleteScheduleAction(id)
@@ -97,9 +98,40 @@ export function AdminSchedulesClient({ initialDataset }: AdminSchedulesClientPro
     })
   }
 
+  const handleToggleRouteSuspension = async (scheduleId: number, currentSuspendedStatus: boolean) => {
+    const action = currentSuspendedStatus ? 'reactivar' : 'suspender'
+    if (!window.confirm(`¿Está seguro de ${action} toda la ruta de este horario?`)) return
+    
+    startTransition(async () => {
+      const result = await toggleScheduleSuspensionAction(scheduleId, !currentSuspendedStatus)
+      if (result.success) {
+        setDataset((prev) => prev.map(s => s.scheduleId === scheduleId ? { ...s, isSuspended: !currentSuspendedStatus } : s))
+        setServerMessage({ type: 'success', text: result.message || 'Estado de ruta actualizado' })
+      } else {
+        setServerMessage({ type: 'error', text: result.message || 'Error al actualizar ruta' })
+      }
+    })
+  }
+
+  const handleToggleWaypointSuspension = async (waypointId: number, currentSuspendedStatus: boolean) => {
+    const action = currentSuspendedStatus ? 'reactivar' : 'suspender'
+    if (!window.confirm(`¿Está seguro de ${action} solo esta parada?`)) return
+    
+    startTransition(async () => {
+      const result = await toggleWaypointSuspensionAction(waypointId, !currentSuspendedStatus)
+      if (result.success) {
+        setDataset((prev) => prev.map(s => s.id === waypointId ? { ...s, isWaypointSuspended: !currentSuspendedStatus } : s))
+        setServerMessage({ type: 'success', text: result.message || 'Estado de parada actualizado' })
+      } else {
+        setServerMessage({ type: 'error', text: result.message || 'Error al actualizar parada' })
+      }
+    })
+  }
+
+  const visibleDataset = dataset.filter(s => s.originPoint !== 'VIA_POINT')
   const filteredDataset = filterZone
-    ? dataset.filter((s) => s.zoneName?.toLowerCase().includes(filterZone.toLowerCase()))
-    : dataset
+    ? visibleDataset.filter((s) => s.zoneName?.toLowerCase().includes(filterZone.toLowerCase()))
+    : visibleDataset
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
@@ -124,12 +156,12 @@ export function AdminSchedulesClient({ initialDataset }: AdminSchedulesClientPro
         <div className="grid grid-cols-2 sm:grid-cols-2 gap-4 mb-8">
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
             <p className="text-sm text-slate-500 font-medium">Total Waypoints</p>
-            <p className="text-3xl font-bold text-slate-800 mt-1">{dataset.length}</p>
+            <p className="text-3xl font-bold text-slate-800 mt-1">{visibleDataset.length}</p>
           </div>
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
             <p className="text-sm text-slate-500 font-medium">Zonas Únicas</p>
             <p className="text-3xl font-bold text-blue-600 mt-1">
-              {new Set(dataset.map((s) => s.zoneName).filter(Boolean)).size}
+              {new Set(visibleDataset.map((s) => s.zoneName).filter(Boolean)).size}
             </p>
           </div>
         </div>
@@ -188,6 +220,22 @@ export function AdminSchedulesClient({ initialDataset }: AdminSchedulesClientPro
                     <td className="py-3 px-4 text-center">{row.hasCampanio ? 'Sí' : 'No'}</td>
                     <td className="py-3 px-4">
                       <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => handleToggleWaypointSuspension(row.id, row.isWaypointSuspended)}
+                          disabled={deletingId === row.id || isPending}
+                          title={row.isWaypointSuspended ? "Reactivar esta parada" : "Suspender solo esta parada"}
+                          className={`p-1 rounded transition-all ${row.isWaypointSuspended ? 'text-red-500 hover:text-red-700 bg-red-50' : 'text-slate-400 hover:text-orange-500'}`}
+                        >
+                          <MapPin size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleToggleRouteSuspension(row.scheduleId, row.isSuspended)}
+                          disabled={deletingId === row.id || isPending}
+                          title={row.isSuspended ? "Reactivar ruta completa" : "Suspender ruta completa"}
+                          className={`p-1 rounded transition-all ${row.isSuspended ? 'text-red-500 hover:text-red-700 bg-red-50' : 'text-slate-400 hover:text-orange-500'}`}
+                        >
+                          <AlertOctagon size={16} />
+                        </button>
                         <button
                           onClick={() => handleEdit(row)}
                           disabled={deletingId === row.id || isPending}

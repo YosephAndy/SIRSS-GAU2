@@ -40,8 +40,14 @@ model User {
   // Corrección: Relación para lecturas GPS
   gpsReadings GPSReading[]
 
+  // Asignaciones de rutas
+  driverAssignments DriverAssignment[]
+
   // Mantenemos la relación con Session del esquema original
   sessions Session[]
+
+  // Recordatorios de recolección
+  reminders Reminder[]
 }
 
 // Mantenemos el modelo Session del esquema original
@@ -136,7 +142,13 @@ model Schedule {
   departureTime String?
   arrivalTime   String?
   zoneName      String?
+  isSuspended   Boolean   @default(false)
+  useStraightLine Boolean @default(false)
+  isSimulating        Boolean   @default(false)
+  simulationStartTime DateTime?
   waypoints     Waypoint[]
+  assignments   DriverAssignment[]
+  reminders     Reminder[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -157,6 +169,8 @@ model Waypoint {
   originalId     Int
   lat            Float?    // Coordenada de latitud (editable desde el mapa admin)
   lng            Float?    // Coordenada de longitud (editable desde el mapa admin)
+  isSuspended    Boolean   @default(false)
+  reminders      Reminder[]
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -237,4 +251,42 @@ model Alert {
   message String
   zona    String? // si es específica de zona
   sentAt  DateTime @default(now())
+}
+
+// Asignación de conductor a una ruta específica en un día
+model DriverAssignment {
+  id         Int      @id @default(autoincrement())
+  scheduleId Int
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  driverId   String
+  driver     User     @relation(fields: [driverId], references: [id])
+  date       DateTime @db.Date // La fecha de la asignación diaria
+  assignedAt DateTime @default(now())
+  
+  status     AssignmentStatus @default(PENDING) // Estado del recorrido del chofer
+
+  @@unique([scheduleId, driverId, date])
+}
+
+enum AssignmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+// Recordatorios configurados por los ciudadanos
+model Reminder {
+  id         Int      @id @default(autoincrement())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduleId Int
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  waypointId Int
+  waypoint   Waypoint @relation(fields: [waypointId], references: [id], onDelete: Cascade)
+  remindAt   String   // Hora de notificación (ej. "06:30 AM")
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, waypointId])
 }

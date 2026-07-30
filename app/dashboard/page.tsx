@@ -24,7 +24,9 @@ export default async function DashboardPage() {
       </AdminLayout>
     );
   }
-  if (role === "DRIVER") return <DriverDashboardScreen />;
+  if (role === "DRIVER") {
+    redirect("/driver");
+  }
   
   return <CitizenDashboardScreen />;
 }
