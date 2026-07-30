@@ -40,6 +40,9 @@ model User {
   // Corrección: Relación para lecturas GPS
   gpsReadings GPSReading[]
 
+  // Asignaciones de rutas
+  driverAssignments DriverAssignment[]
+
   // Mantenemos la relación con Session del esquema original
   sessions Session[]
 }
@@ -141,6 +144,7 @@ model Schedule {
   isSimulating        Boolean   @default(false)
   simulationStartTime DateTime?
   waypoints     Waypoint[]
+  assignments   DriverAssignment[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -242,4 +246,25 @@ model Alert {
   message String
   zona    String? // si es específica de zona
   sentAt  DateTime @default(now())
+}
+
+// Asignación de conductor a una ruta específica en un día
+model DriverAssignment {
+  id         Int      @id @default(autoincrement())
+  scheduleId Int
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  driverId   String
+  driver     User     @relation(fields: [driverId], references: [id])
+  date       DateTime @db.Date // La fecha de la asignación diaria
+  assignedAt DateTime @default(now())
+  
+  status     AssignmentStatus @default(PENDING) // Estado del recorrido del chofer
+
+  @@unique([scheduleId, driverId, date])
+}
+
+enum AssignmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
 }

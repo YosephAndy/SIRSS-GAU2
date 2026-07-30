@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { getSession, isAdmin } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 import { createSchedule, deleteSchedule, updateSchedule, updateSchedulesSequence, updateWaypointCoords, toggleScheduleSuspension, toggleWaypointSuspension, addMapWaypoint, deleteMapWaypoint, createFullRoute, deleteFullRoute, insertViaPoint, toggleSimulation } from '../services/schedule.service'
 import { scheduleFormSchema } from '../schemas/schedule.schema'
 
@@ -362,5 +363,101 @@ export async function toggleSimulationAction(scheduleId: number, isSimulating: b
   } catch (error: any) {
     console.error('[TOGGLE_SIMULATION_ERROR]:', error)
     return { success: false, message: `Error: ${error.message || 'Error desconocido'}` }
+  }
+}
+
+// ==========================================
+// ACCIONES PARA CONDUCTORES Y ASIGNACIONES
+// ==========================================
+
+export async function assignDriverAction(scheduleId: number, driverId: string, date: Date) {
+  try {
+    const session = await getSession()
+    if (!session || !isAdmin(session)) {
+      return { success: false, message: 'No autorizado.' }
+    }
+
+    
+    // Check if duplicate assignment exists
+    const existing = await prisma.driverAssignment.findUnique({
+      where: {
+        scheduleId_driverId_date: {
+          scheduleId,
+          driverId,
+          date
+        }
+      }
+    })
+
+    if (existing) {
+      return { success: false, message: 'El conductor ya tiene esta ruta asignada para esta fecha.' }
+    }
+
+    await prisma.driverAssignment.create({
+      data: {
+        scheduleId,
+        driverId,
+        date,
+        status: 'PENDING'
+      }
+    })
+
+    revalidatePath('/admin/routes')
+    revalidatePath('/driver/dashboard')
+
+    return { success: true, message: 'Conductor asignado exitosamente.' }
+  } catch (error) {
+    console.error('[ASSIGN_DRIVER_ACTION_ERROR]:', error)
+    return { success: false, message: 'Error al asignar conductor.' }
+  }
+}
+
+export async function startDriverRouteAction(assignmentId: number, scheduleId: number) {
+  try {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'No autenticado' }
+
+
+    // Iniciar simulación en el schedule
+    await toggleSimulation(scheduleId, true)
+    
+    // Cambiar estado de asignación
+    await prisma.driverAssignment.update({
+      where: { id: assignmentId },
+      data: { status: 'IN_PROGRESS' }
+    })
+
+    revalidatePath('/driver/dashboard')
+    revalidatePath('/routes')
+
+    return { success: true, message: 'Ruta iniciada correctamente.' }
+  } catch (error) {
+    console.error('[START_ROUTE_ACTION_ERROR]:', error)
+    return { success: false, message: 'Error al iniciar la ruta.' }
+  }
+}
+
+export async function reportEmergencyAction(type: 'SPILL' | 'BLOCKED_ROAD' | 'VEHICLE_BREAKDOWN' | 'OTHER', lat?: number, lng?: number) {
+  try {
+    const session = await getSession()
+    if (!session || session.user.role !== 'DRIVER') return { success: false, message: 'No autorizado' }
+
+    
+    await prisma.incident.create({
+      data: {
+        title: `Emergencia Reportada: ${type}`,
+        description: 'Reporte automático desde la app del conductor',
+        type,
+        driverId: session.user.id,
+        lat,
+        lng,
+        status: 'PENDING'
+      }
+    })
+
+    return { success: true, message: 'Emergencia reportada exitosamente.' }
+  } catch (error) {
+    console.error('[REPORT_EMERGENCY_ERROR]:', error)
+    return { success: false, message: 'Error al reportar emergencia.' }
   }
 }

@@ -17,11 +17,14 @@ const EditableMapComponent = dynamic(() => import('./editable-map'), {
   ),
 })
 
+export type DriverOption = { id: string; name: string }
+
 interface AdminRoutesClientProps {
   dataset: FlatSchedule[]
+  drivers?: DriverOption[]
 }
 
-export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
+export function AdminRoutesClient({ dataset, drivers = [] }: AdminRoutesClientProps) {
   const router = useRouter()
   const uniqueRoutes = useMemo(() => {
     return Array.from(
@@ -52,6 +55,10 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
     return m
   })
 
+  // Driver Assignment State
+  const [selectedDriver, setSelectedDriver] = useState<string>('')
+  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [isAssigning, setIsAssigning] = useState(false)
 
   // Creation Mode State
   const [isCreatingRoute, setIsCreatingRoute] = useState(false)
@@ -217,6 +224,22 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
           else next.set(scheduleId, new Date())
           return next
         })
+      }
+    })
+  }
+
+  const handleAssignDriver = () => {
+    if (!currentScheduleId || !selectedDriver || !selectedDate) return
+    setIsAssigning(true)
+    startTransition(async () => {
+      const { assignDriverAction } = await import('../actions/schedule.actions')
+      // Normalizar fecha a UTC medianoche para evitar desfase de zona horaria
+      const utcDate = new Date(`${selectedDate}T00:00:00.000Z`)
+      const res = await assignDriverAction(currentScheduleId, selectedDriver, utcDate)
+      setMessage({ type: res.success ? 'success' : 'error', text: res.message })
+      setIsAssigning(false)
+      if (res.success) {
+        setSelectedDriver('')
       }
     })
   }
@@ -461,6 +484,47 @@ export function AdminRoutesClient({ dataset }: AdminRoutesClientProps) {
           </div>
         </div>
 
+        {/* Asignar Conductor */}
+        {!isCreatingRoute && currentRoute && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div className="flex-1 flex gap-4">
+              <div className="flex-1">
+                <label className="block text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                  <Info size={16} className="text-emerald-500" />
+                  Asignar a conductor
+                </label>
+                <select
+                  value={selectedDriver}
+                  onChange={(e) => setSelectedDriver(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-slate-50 transition-all"
+                >
+                  <option value="">Seleccione un conductor...</option>
+                  {drivers.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="w-40">
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Fecha</label>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 bg-slate-50 transition-all"
+                />
+              </div>
+            </div>
+            <div>
+              <button
+                onClick={handleAssignDriver}
+                disabled={!selectedDriver || isAssigning}
+                className="px-5 py-3 rounded-xl font-bold text-sm transition-colors border shadow-sm bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {isAssigning ? 'Asignando...' : 'Asignar Ruta'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Secuencia Vertical Desplegable */}
         {!isCreatingRoute && currentRoute && (() => {
