@@ -3,7 +3,7 @@
 import React, { useState, useTransition } from 'react'
 import dynamic from 'next/dynamic'
 import { AlertTriangle, Navigation, CheckCircle2, MapPin, Clock, Activity, Shield, Loader2 } from 'lucide-react'
-import { startDriverRouteAction, reportEmergencyAction } from '../actions/schedule.actions'
+import { startDriverRouteAction, reportEmergencyAction, finishDriverRouteAction } from '../actions/schedule.actions'
 
 // Load Leaflet map dynamically (SSR disabled)
 const DriverMap = dynamic(() => import('./driver-map'), {
@@ -77,6 +77,20 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
     })
   }
 
+  const handleFinishRoute = () => {
+    if (!route) return
+    startTransition(async () => {
+      const res = await finishDriverRouteAction(route.assignmentId, route.scheduleId)
+      if (res.success) {
+        setIsActive(false)
+        setSimStartTime(null)
+        showNotification('success', '✅ Ruta finalizada.')
+      } else {
+        showNotification('error', res.message || 'Error al finalizar ruta.')
+      }
+    })
+  }
+
   const handleEmergency = (type: EmergencyType) => {
     setReportingType(type)
     startTransition(async () => {
@@ -124,22 +138,36 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
                   <p className="text-white font-bold text-sm">{route.totalWaypoints} Puntos restantes</p>
                 </div>
                 {!isActive ? (
+                  route?.status !== 'COMPLETED' ? (
+                    <button
+                      onClick={handleStartRoute}
+                      disabled={isPending}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-slate-900 font-bold text-sm hover:bg-slate-100 transition-all disabled:opacity-50 shadow-lg"
+                    >
+                      {isPending ? (
+                        <><Loader2 size={16} className="animate-spin" /> Iniciando...</>
+                      ) : (
+                        <><Navigation size={16} /> Iniciar Navegación</>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 font-bold text-sm">
+                      <CheckCircle2 size={16} />
+                      Ruta Completada
+                    </div>
+                  )
+                ) : (
                   <button
-                    onClick={handleStartRoute}
+                    onClick={handleFinishRoute}
                     disabled={isPending}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-slate-900 font-bold text-sm hover:bg-slate-100 transition-all disabled:opacity-50 shadow-lg"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-all disabled:opacity-50 shadow-lg"
                   >
                     {isPending ? (
-                      <><Loader2 size={16} className="animate-spin" /> Iniciando...</>
+                      <><Loader2 size={16} className="animate-spin" /> Deteniendo...</>
                     ) : (
-                      <><Navigation size={16} /> Iniciar Navegación</>
+                      <><Shield size={16} /> Finalizar Ruta</>
                     )}
                   </button>
-                ) : (
-                  <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold text-sm">
-                    <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                    En Ruta
-                  </div>
                 )}
               </div>
             </div>
@@ -153,10 +181,10 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
         </div>
 
         {/* Map Area */}
-        <div className={`bg-[#181818] border border-white/10 rounded-2xl overflow-hidden relative transition-all ${isFullscreen ? 'fixed inset-0 z-[100] h-screen w-screen rounded-none' : 'h-[400px]'}`}>
+        <div className={`bg-[#181818] border border-white/10 rounded-2xl overflow-hidden relative transition-all ${isFullscreen ? 'fixed top-0 left-0 w-screen h-screen z-[99999] rounded-none bg-[#101010]' : 'h-[400px]'}`}>
           <button 
             onClick={() => setIsFullscreen(!isFullscreen)}
-            className="absolute top-4 right-4 z-[999] bg-slate-900/80 hover:bg-slate-900 text-white p-2 rounded-lg backdrop-blur shadow-lg border border-white/10"
+            className="absolute top-4 right-4 z-[9999] bg-slate-900/80 hover:bg-slate-900 text-white p-2 rounded-lg backdrop-blur shadow-lg border border-white/10"
           >
             {isFullscreen ? 'Contraer Mapa' : 'Agrandar Mapa'}
           </button>

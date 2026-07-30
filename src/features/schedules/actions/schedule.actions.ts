@@ -437,6 +437,30 @@ export async function startDriverRouteAction(assignmentId: number, scheduleId: n
   }
 }
 
+export async function finishDriverRouteAction(assignmentId: number, scheduleId: number) {
+  try {
+    const session = await getSession()
+    if (!session) return { success: false, message: 'No autenticado' }
+
+    // Detener simulación
+    await toggleSimulation(scheduleId, false)
+    
+    // Cambiar estado de asignación
+    await prisma.driverAssignment.update({
+      where: { id: assignmentId },
+      data: { status: 'COMPLETED' }
+    })
+
+    revalidatePath('/driver/dashboard')
+    revalidatePath('/routes')
+
+    return { success: true, message: 'Ruta finalizada correctamente.' }
+  } catch (error) {
+    console.error('[FINISH_ROUTE_ACTION_ERROR]:', error)
+    return { success: false, message: 'Error al finalizar la ruta.' }
+  }
+}
+
 export async function reportEmergencyAction(type: 'SPILL' | 'BLOCKED_ROAD' | 'VEHICLE_BREAKDOWN' | 'OTHER', lat?: number, lng?: number) {
   try {
     const session = await getSession()
