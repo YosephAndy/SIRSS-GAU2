@@ -16,11 +16,21 @@ export default async function DashboardPage() {
   const role = session.user?.role?.toUpperCase();
 
   if (role === "ADMIN") {
+    const { prisma } = await import("@/lib/prisma");
     const { getAnnouncements } = await import("@/features/announcements/services/announcement.service");
-    const announcements = await getAnnouncements();
+    
+    const [announcements, pendingIncidents] = await Promise.all([
+      getAnnouncements(),
+      prisma.incident.findMany({
+        where: { status: 'PENDING' },
+        include: { driver: { select: { name: true } } },
+        orderBy: { createdAt: 'desc' }
+      })
+    ]);
+
     return (
       <AdminLayout>
-        <AdminDashboardScreen initialAnnouncements={announcements} />
+        <AdminDashboardScreen initialAnnouncements={announcements} initialIncidents={pendingIncidents} />
       </AdminLayout>
     );
   }

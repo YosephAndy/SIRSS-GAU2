@@ -21,6 +21,9 @@ export default async function DriverDashboardPage() {
       driverId: session.user.id,
       date: { gte: startOfDay, lte: endOfDay },
     },
+    orderBy: {
+      assignedAt: 'desc'
+    },
     include: {
       schedule: {
         include: {
@@ -65,14 +68,14 @@ export default async function DriverDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#101010] text-slate-200 font-sans">
-      <header className="px-8 py-6 border-b border-white/5 flex items-center justify-between">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans">
+      <header className="px-6 md:px-8 py-6 bg-white border-b border-slate-200/60 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 sticky top-0 z-10">
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Portal del Conductor</h1>
-          <p className="text-slate-400 text-sm mt-1">Gestión de ruta diaria y reportes operativos</p>
+          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Portal del Conductor</h1>
+          <p className="text-slate-500 text-sm mt-1 font-medium">Gestión de ruta diaria y reportes operativos</p>
         </div>
-        <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-2 rounded-full text-sm font-semibold">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+        <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-2 rounded-xl text-sm font-bold shadow-sm">
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
           GPS Activo y Compartiendo
         </div>
       </header>

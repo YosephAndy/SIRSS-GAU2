@@ -466,11 +466,56 @@ export async function reportEmergencyAction(type: 'SPILL' | 'BLOCKED_ROAD' | 'VE
     const session = await getSession()
     if (!session || session.user.role !== 'DRIVER') return { success: false, message: 'No autorizado' }
 
-    
+    // Diccionario para traducir al español
+    const typeTranslations: Record<string, string> = {
+      'SPILL': 'Incidencia de Tránsito (Derrame/Choque)',
+      'BLOCKED_ROAD': 'Obstrucción de Vía',
+      'VEHICLE_BREAKDOWN': 'Falla Mecánica',
+      'OTHER': 'Otro tipo de emergencia'
+    }
+
+    const tipoEsp = typeTranslations[type] || type
+
+    // Buscar si el conductor tiene una ruta hoy para enriquecer el detalle
+    const todayStr = new Date().toISOString().split('T')[0]
+    const startOfDay = new Date(`${todayStr}T00:00:00.000Z`)
+    const endOfDay   = new Date(`${todayStr}T23:59:59.999Z`)
+
+    const activeAssignment = await prisma.driverAssignment.findFirst({
+      where: {
+        driverId: session.user.id,
+        date: { gte: startOfDay, lte: endOfDay },
+        status: { in: ['IN_PROGRESS', 'PENDING'] }
+      },
+      orderBy: { assignedAt: 'desc' },
+      include: {
+        schedule: {
+          include: {
+            route: { include: { zone: true } }
+          }
+        }
+      }
+    })
+
+    let description = 'Reporte automático desde la app del conductor.'
+    let zonaName = 'Zona Desconocida'
+    let routeName = 'Turno Desconocido'
+
+    if (activeAssignment?.schedule?.route) {
+      zonaName = activeAssignment.schedule.route.zone?.name || 'Zona Desconocida'
+      const shiftName = activeAssignment.schedule.route.shift
+      
+      // Construir el nombre descriptivo de la ruta: "Turno MAÑANA (Lunes, Miércoles)"
+      const days = activeAssignment.schedule.days.join(', ')
+      routeName = `Turno ${shiftName}` + (days ? ` - Días: ${days}` : '')
+      
+      description = `Incidente reportado en la ruta "${routeName}" perteneciente a "${zonaName}".`
+    }
+
     await prisma.incident.create({
       data: {
-        title: `Emergencia Reportada: ${type}`,
-        description: 'Reporte automático desde la app del conductor',
+        title: `Alerta: ${tipoEsp}`,
+        description,
         type,
         driverId: session.user.id,
         lat,

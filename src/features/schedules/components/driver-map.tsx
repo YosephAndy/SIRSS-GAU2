@@ -17,6 +17,19 @@ interface DriverMapProps {
   routeWaypoints: Waypoint[]
   simStartTime: Date | null
   isPaused?: boolean
+  isFullscreen?: boolean
+}
+
+function MapSizeUpdater({ isFullscreen }: { isFullscreen?: boolean }) {
+  const map = useMap()
+  useEffect(() => {
+    // Timeout allows CSS transition to finish before calculating new size
+    const timer = setTimeout(() => {
+      map.invalidateSize()
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [isFullscreen, map])
+  return null
 }
 
 // Interpolate truck position along route
@@ -125,7 +138,7 @@ function TruckSimulator({ positions, startTime, isPaused }: { positions: [number
   )
 }
 
-export default function DriverMap({ waypoints, routeWaypoints, simStartTime, isPaused = false }: DriverMapProps) {
+export default function DriverMap({ waypoints, routeWaypoints, simStartTime, isPaused = false, isFullscreen }: DriverMapProps) {
   const validWaypoints = waypoints.filter(w => w.lat !== null && w.lng !== null)
   const validRouteWaypoints = routeWaypoints.filter(w => w.lat !== null && w.lng !== null)
   
@@ -139,9 +152,9 @@ export default function DriverMap({ waypoints, routeWaypoints, simStartTime, isP
     <MapContainer
       center={center}
       zoom={15}
-      style={{ height: '100%', width: '100%' }}
+      className="w-full h-full rounded-2xl z-0"
     >
-      <MapResizer />
+      <MapSizeUpdater isFullscreen={isFullscreen} />
       <TileLayer
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         attribution='&copy; OpenStreetMap contributors'

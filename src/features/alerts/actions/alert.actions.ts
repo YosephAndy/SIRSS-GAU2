@@ -24,6 +24,33 @@ export async function createAlertAction(data: { title: string; message: string; 
   }
 }
 
+export async function publishIncidentAction(incidentId: number) {
+  try {
+    const incident = await prisma.incident.findUnique({ where: { id: incidentId } })
+    if (!incident) return { success: false, message: 'Incidencia no encontrada.' }
+
+    // Create the alert for citizens
+    await prisma.alert.create({
+      data: {
+        title: incident.title,
+        message: incident.description,
+      }
+    })
+
+    // Resolve the incident so it leaves the live feed
+    await prisma.incident.update({
+      where: { id: incidentId },
+      data: { status: 'RESOLVED' }
+    })
+
+    revalidatePath('/dashboard')
+    revalidatePath('/alerts')
+    return { success: true, message: 'Incidencia publicada a ciudadanos.' }
+  } catch {
+    return { success: false, message: 'Error al publicar la incidencia.' }
+  }
+}
+
 export async function deleteAlertAction(id: number) {
   try {
     await prisma.alert.delete({ where: { id } })
