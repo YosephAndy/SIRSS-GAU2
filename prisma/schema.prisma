@@ -272,6 +272,7 @@ enum AssignmentStatus {
   PENDING
   IN_PROGRESS
   COMPLETED
+  CANCELLED
 }
 
 // Recordatorios configurados por los ciudadanos
