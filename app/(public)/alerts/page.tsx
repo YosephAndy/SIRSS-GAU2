@@ -3,6 +3,7 @@ import { Metadata } from 'next'
 import Link from 'next/link'
 import { Bell, MapPin, Clock, Leaf, AlertTriangle, ChevronRight } from 'lucide-react'
 import { getAlerts } from '@/features/alerts/actions/alert.actions'
+import MobileBottomNav from '@/components/ui/MobileBottomNav'
 
 type Alert = { id: number; title: string; message: string; zona: string | null; sentAt: Date }
 
@@ -17,7 +18,8 @@ export default async function AlertsPage() {
   const alerts: Alert[] = await getAlerts()
 
   return (
-    <div className="min-h-screen bg-[#f8fafc]">
+    <>
+    <div className="min-h-screen bg-[#f8fafc] pb-16">
       {/* Navbar */}
       <nav className="fixed top-0 w-full bg-white/80 backdrop-blur-md z-50 shadow-sm">
         <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 xl:px-12 flex justify-between items-center h-20">
@@ -95,5 +97,7 @@ export default async function AlertsPage() {
         </div>
       </div>
     </div>
+    <MobileBottomNav />
+    </>
   )
 }

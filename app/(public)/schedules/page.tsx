@@ -5,6 +5,7 @@ import useSWR from 'swr'
 import { Search, X, MapPin, Map, Bell, BellRing, Loader2 } from 'lucide-react'
 import type { FlatSchedule } from '@/features/schedules/services/schedule.service'
 import { toggleReminderAction, getUserRemindersAction } from '@/features/schedules/actions/reminder.actions'
+import MobileBottomNav from '@/components/ui/MobileBottomNav'
 
 const fetcher = (url: string) => fetch(url).then((res) => {
   if (!res.ok) throw new Error('Error al cargar los horarios')
@@ -512,6 +513,7 @@ export default function SchedulesPage() {
           </div>
         </div>
       </div>
+      <MobileBottomNav />
     </div>
   )
 }

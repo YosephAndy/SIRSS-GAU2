@@ -15,7 +15,7 @@ import {
   MapPin,
   AlertTriangle
 } from "lucide-react";
-
+import MobileBottomNav from '@/components/ui/MobileBottomNav'
 
 export default function CleanCityLanding() {
   return (
@@ -195,6 +195,7 @@ export default function CleanCityLanding() {
           </div>
         </div>
       </footer>
+      <MobileBottomNav />
     </div>
   );
 }
