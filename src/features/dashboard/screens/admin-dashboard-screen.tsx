@@ -2,12 +2,74 @@
 
 import React, { useState } from 'react'
 import Link from 'next/link'
+import { publishIncidentAction } from '@/features/alerts/actions/alert.actions'
 import { 
   Truck, Trash2, CheckCircle, AlertTriangle, 
-  MapPin, FileText, Plus, Edit2, Calendar, MessageSquare
+  MapPin, FileText, Plus, Edit2, Calendar, MessageSquare, Share, Loader2
 } from 'lucide-react'
 
-export function AdminDashboardScreen({ initialAnnouncements = [] }: { initialAnnouncements?: any[] }) {
+function IncidentCard({ incident }: { incident: any }) {
+  const [isPending, startTransition] = React.useTransition()
+
+  const handlePublish = () => {
+    startTransition(async () => {
+      await publishIncidentAction(incident.id)
+    })
+  }
+
+  return (
+    <div className="group relative p-5 rounded-2xl bg-white border border-red-100 hover:border-red-300 hover:shadow-md transition-all shadow-sm">
+      <div className="flex justify-between items-start gap-4">
+        <div className="mt-0.5 h-10 w-10 rounded-xl flex items-center justify-center shrink-0 bg-red-50 text-red-600 shadow-inner shadow-red-500/10">
+          <AlertTriangle size={20} />
+        </div>
+        <div className="flex-1">
+          <div className="flex justify-between items-start">
+            <h4 className="text-[15px] font-bold text-slate-800 line-clamp-1">{incident.title}</h4>
+            <span className="text-xs font-bold text-slate-400">
+              {new Date(incident.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+          <p className="text-sm text-slate-500 mt-1 line-clamp-2 leading-relaxed">{incident.description}</p>
+          
+          <div className="mt-3 flex items-center gap-3">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-600 text-xs font-bold">
+              Conductor: {incident.driver?.name || 'Desconocido'}
+            </div>
+            {incident.lat && incident.lng && (
+              <a 
+                href={`https://www.google.com/maps/search/?api=1&query=${incident.lat},${incident.lng}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700"
+              >
+                <MapPin size={12} /> Ver en Mapa
+              </a>
+            )}
+            <div className="ml-auto">
+              <button
+                onClick={handlePublish}
+                disabled={isPending}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-colors disabled:opacity-50"
+              >
+                {isPending ? <Loader2 size={14} className="animate-spin" /> : <Share size={14} />}
+                Mostrar al Ciudadano
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function AdminDashboardScreen({ 
+  initialAnnouncements = [],
+  initialIncidents = [] 
+}: { 
+  initialAnnouncements?: any[],
+  initialIncidents?: any[] 
+}) {
   const [editingAnnouncement, setEditingAnnouncement] = useState<any | null>(null);
 
   const handleEditAnnouncement = (aviso: any) => {
@@ -103,37 +165,40 @@ export function AdminDashboardScreen({ initialAnnouncements = [] }: { initialAnn
               <AlertTriangle size={24} />
             </div>
           </div>
-          <div className="text-4xl font-black text-red-600">1</div>
+          <div className="text-4xl font-black text-red-600">{initialIncidents.length}</div>
           <div className="mt-4 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-50 text-red-700 text-xs font-bold">
-            Alerta en zona histórica
+            {initialIncidents.length > 0 ? 'Atención Requerida' : 'Todo en orden'}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 pb-10">
-        {/* Map Section */}
-        <div className="xl:col-span-2 bg-white rounded-3xl border border-slate-200/60 shadow-sm overflow-hidden flex flex-col">
+        {/* Live Incidents Section */}
+        <div className="xl:col-span-2 bg-white rounded-3xl border border-slate-200/60 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
           <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-            <h2 className="text-lg font-extrabold text-slate-800">Monitoreo en Tiempo Real</h2>
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 font-bold text-xs border border-blue-100">
+            <h2 className="text-lg font-extrabold text-slate-800">Emergencias Reportadas (En Vivo)</h2>
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 font-bold text-xs border border-red-100">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-500 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-600"></span>
               </span>
-              En Vivo
+              Monitoreo Activo
             </div>
           </div>
-          <div className="flex-1 min-h-[400px] bg-slate-100 flex flex-col items-center justify-center relative overflow-hidden">
-            <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=2074&auto=format&fit=crop')] bg-cover bg-center opacity-40 mix-blend-luminosity"></div>
-            <div className="absolute inset-0 bg-slate-900/10"></div>
-            
-            <div className="relative z-10 bg-white/90 backdrop-blur-sm p-6 rounded-2xl shadow-xl border border-white text-center max-w-sm">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600 shadow-inner">
-                <MapPin size={32} />
+          
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+            {initialIncidents.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 p-8 text-center gap-3">
+                <div className="p-4 bg-emerald-50 rounded-full">
+                  <CheckCircle size={32} className="text-emerald-400" />
+                </div>
+                <p className="text-sm font-medium">No hay emergencias pendientes. Todo opera con normalidad.</p>
               </div>
-              <h3 className="font-bold text-slate-800 text-lg mb-2">Mapa Integrado</h3>
-              <p className="text-sm text-slate-500 font-medium">La visualización de unidades en tiempo real se implementará en el próximo sprint.</p>
-            </div>
+            ) : (
+              initialIncidents.map((incident) => (
+                <IncidentCard key={incident.id} incident={incident} />
+              ))
+            )}
           </div>
         </div>
 

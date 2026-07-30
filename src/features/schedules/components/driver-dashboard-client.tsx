@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState, useTransition } from 'react'
+import React, { useState, useTransition, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { AlertTriangle, Navigation, CheckCircle2, MapPin, Clock, Activity, Shield, Loader2, Pause, Play, Maximize, Minimize } from 'lucide-react'
+import { AlertTriangle, Navigation, CheckCircle2, MapPin, Clock, Activity, Shield, Loader2, Pause, Play, Maximize, Minimize, StopCircle } from 'lucide-react'
 import { startDriverRouteAction, reportEmergencyAction, finishDriverRouteAction } from '../actions/schedule.actions'
 
 // Load Leaflet map dynamically (SSR disabled)
@@ -43,9 +44,9 @@ interface DriverDashboardClientProps {
 type EmergencyType = 'SPILL' | 'BLOCKED_ROAD' | 'VEHICLE_BREAKDOWN' | 'OTHER'
 
 const EMERGENCY_BUTTONS: { label: string; type: EmergencyType; color: string }[] = [
-  { label: 'Reportar Obstrucción de Vía', type: 'BLOCKED_ROAD', color: 'bg-red-500 hover:bg-red-600 text-white' },
-  { label: 'Reportar Falla Mecánica', type: 'VEHICLE_BREAKDOWN', color: 'bg-orange-500 hover:bg-orange-600 text-white' },
-  { label: 'Reportar Incidencia de Tránsito', type: 'SPILL', color: 'bg-[#1a1a1a] hover:bg-[#222] border border-slate-600 text-slate-200' },
+  { label: 'Reportar Obstrucción de Vía', type: 'BLOCKED_ROAD', color: 'bg-red-500 hover:bg-red-600 text-white shadow-sm' },
+  { label: 'Reportar Falla Mecánica', type: 'VEHICLE_BREAKDOWN', color: 'bg-orange-500 hover:bg-orange-600 text-white shadow-sm' },
+  { label: 'Reportar Incidencia de Tránsito', type: 'SPILL', color: 'bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 shadow-sm' },
 ]
 
 export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
@@ -59,24 +60,21 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
   const [reportingType, setReportingType] = useState<EmergencyType | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const mapContainerRef = React.useRef<HTMLDivElement>(null)
+  const router = useRouter()
+
+  useEffect(() => {
+    // Si no hay ruta asignada o la actual ya fue completada, hacer polling cada 15s para revisar si el admin asignó una nueva
+    if (!route || route.status === 'COMPLETED') {
+      const interval = setInterval(() => {
+        router.refresh()
+      }, 15000)
+      return () => clearInterval(interval)
+    }
+  }, [route, isActive, router])
 
   const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      mapContainerRef.current?.requestFullscreen().catch(err => {
-        console.error(`Error attempting to enable full-screen mode: ${err.message}`)
-      })
-    } else {
-      document.exitFullscreen()
-    }
+    setIsFullscreen(!isFullscreen)
   }
-
-  React.useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
-    }
-    document.addEventListener('fullscreenchange', handleFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
-  }, [])
 
   const showNotification = (type: 'success' | 'error', text: string) => {
     setNotification({ type, text })
@@ -110,6 +108,8 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
 
   const handleFinishRoute = () => {
     if (!route) return
+    if (!window.confirm("¿Estás seguro que deseas finalizar esta ruta? Ya no podrás retomarla.")) return
+
     startTransition(async () => {
       const res = await finishDriverRouteAction(route.assignmentId, route.scheduleId)
       if (res.success) {
@@ -143,8 +143,8 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Notification */}
       {notification && (
-        <div className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-2xl shadow-2xl font-medium text-sm flex items-center gap-3 border transition-all
-          ${notification.type === 'success' ? 'bg-emerald-900/90 border-emerald-700 text-emerald-200' : 'bg-red-900/90 border-red-700 text-red-200'}`}>
+        <div className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-2xl shadow-xl font-bold text-sm flex items-center gap-3 border transition-all
+          ${notification.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
           {notification.type === 'success' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}
           {notification.text}
         </div>
@@ -153,28 +153,28 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
       {/* Left: Route card + Map */}
       <div className="lg:col-span-2 space-y-4">
         {/* Route Info Card */}
-        <div className="bg-[#181818] border border-white/10 rounded-2xl p-5">
+        <div className="bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm">
           {route ? (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                <p className="text-slate-400 text-xs font-extrabold uppercase tracking-widest mb-1 flex items-center gap-1.5">
                   <MapPin size={12} /> Código de Ruta
                 </p>
-                <h2 className="text-xl font-bold text-white">{route.routeName}</h2>
+                <h2 className="text-xl font-black text-slate-800">{route.routeName}</h2>
               </div>
               <div className="flex items-center gap-6">
-                <div className="text-center">
-                  <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-1 flex items-center gap-1.5">
-                    <Activity size={12} /> Puntos de Control
+                <div className="text-center bg-slate-50 px-4 py-2 rounded-xl border border-slate-100">
+                  <p className="text-slate-400 text-[10px] font-extrabold uppercase tracking-widest mb-1 flex items-center justify-center gap-1.5">
+                    <Activity size={12} /> Puntos
                   </p>
-                  <p className="text-white font-bold text-sm">{route.totalWaypoints} Puntos restantes</p>
+                  <p className="text-slate-800 font-black text-sm">{route.totalWaypoints} <span className="text-slate-400 text-xs font-semibold">restantes</span></p>
                 </div>
                 {!isActive ? (
                   route?.status !== 'COMPLETED' ? (
                     <button
                       onClick={handleStartRoute}
                       disabled={isPending}
-                      className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-white text-slate-900 font-bold text-sm hover:bg-slate-100 transition-all disabled:opacity-50 shadow-lg"
+                      className="flex items-center gap-2 px-6 py-3 rounded-full bg-slate-900 text-white font-bold text-sm hover:bg-slate-800 transition-all disabled:opacity-50 shadow-md"
                     >
                       {isPending ? (
                         <><Loader2 size={16} className="animate-spin" /> Iniciando...</>
@@ -195,7 +195,7 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
                       disabled={isPending}
                       className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-lg ${isPaused ? 'bg-emerald-500 hover:bg-emerald-600 text-white' : 'bg-orange-500 hover:bg-orange-600 text-white'}`}
                     >
-                      {isPaused ? <><Play size={16} /> Retomar</> : <><Pause size={16} /> Detener</>}
+                      {isPaused ? <><Play size={16} /> Retomar</> : <><Pause size={16} /> Pausar</>}
                     </button>
                     <button
                       onClick={handleFinishRoute}
@@ -205,7 +205,7 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
                       {isPending ? (
                         <Loader2 size={16} className="animate-spin" />
                       ) : (
-                        <Shield size={16} />
+                        <><StopCircle size={16} /> Finalizar Ruta</>
                       )}
                     </button>
                   </div>
@@ -213,32 +213,36 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
               </div>
             </div>
           ) : (
-            <div className="text-center py-6">
-              <Clock size={32} className="text-slate-600 mx-auto mb-3" />
-              <p className="text-slate-400 font-medium">Sin ruta asignada para hoy</p>
-              <p className="text-slate-600 text-sm mt-1">El administrador aún no te ha asignado una ruta.</p>
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                <Clock size={32} className="text-slate-400" />
+              </div>
+              <p className="text-slate-800 font-extrabold text-lg">Sin ruta asignada para hoy</p>
+              <p className="text-slate-500 font-medium text-sm mt-1">El administrador aún no te ha asignado una ruta.</p>
             </div>
           )}
         </div>
 
         {/* Map Area */}
-        <div ref={mapContainerRef} className={`bg-[#181818] border border-white/10 rounded-2xl overflow-hidden relative transition-all ${isFullscreen ? 'h-screen w-screen' : 'h-[400px]'}`}>
+        <div ref={mapContainerRef} className={`${isFullscreen ? 'fixed inset-0 z-[100] m-0 rounded-none' : 'relative h-[400px] border border-slate-200/60 rounded-3xl shadow-sm mt-4'} bg-slate-100 overflow-hidden transition-all`}>
           <button 
             onClick={toggleFullscreen}
-            className="absolute top-4 right-4 z-[9999] bg-slate-900/80 hover:bg-slate-900 text-white p-2 rounded-lg backdrop-blur shadow-lg border border-white/10"
+            className="absolute top-4 right-4 z-[9999] bg-white/90 hover:bg-white text-slate-700 p-2.5 rounded-xl backdrop-blur shadow-md border border-slate-200 transition-colors"
             title={isFullscreen ? 'Contraer Mapa' : 'Agrandar Mapa'}
           >
             {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
           </button>
 
           {validRouteWaypoints.length > 0 ? (
-            <DriverMap waypoints={validWaypoints} routeWaypoints={validRouteWaypoints} simStartTime={simStartTime} isPaused={isPaused} />
+            <DriverMap waypoints={validWaypoints} routeWaypoints={validRouteWaypoints} simStartTime={simStartTime} isPaused={isPaused} isFullscreen={isFullscreen} />
           ) : (
             <div className="h-full flex items-center justify-center">
-              <div className="text-center space-y-2 text-slate-600">
-                <MapPin size={40} className="mx-auto" />
-                <p className="text-sm">Navegador GPS e Indicación de Paradas</p>
-                <p className="text-xs text-slate-700">Aparecerá cuando inicie la navegación</p>
+              <div className="text-center space-y-3 text-slate-400">
+                <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mx-auto mb-2 text-slate-300">
+                  <MapPin size={32} />
+                </div>
+                <p className="text-sm font-bold text-slate-500">Navegador GPS e Indicación de Paradas</p>
+                <p className="text-xs font-medium text-slate-400">Aparecerá cuando inicie la navegación</p>
               </div>
             </div>
           )}
@@ -247,10 +251,12 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
 
       {/* Right: Emergency actions */}
       <div className="space-y-4">
-        <div className="bg-[#181818] border border-white/10 rounded-2xl p-5">
+        <div className="bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-5">
-            <Shield size={18} className="text-red-400" />
-            <h2 className="text-white font-bold">Acciones de Emergencia</h2>
+            <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center text-red-500">
+              <Shield size={16} />
+            </div>
+            <h2 className="text-slate-800 font-extrabold">Acciones de Emergencia</h2>
           </div>
           <div className="space-y-3">
             {EMERGENCY_BUTTONS.map((btn) => (
@@ -269,29 +275,29 @@ export function DriverDashboardClient({ route }: DriverDashboardClientProps) {
               </button>
             ))}
           </div>
-          <p className="text-slate-600 text-xs mt-4 text-center">
+          <p className="text-slate-500 font-medium text-xs mt-4 text-center">
             Los reportes se envían automáticamente al administrador
           </p>
         </div>
 
         {/* Route status */}
         {route && (
-          <div className="bg-[#181818] border border-white/10 rounded-2xl p-5">
-            <h3 className="text-white font-bold mb-4 text-sm uppercase tracking-widest text-slate-400">Estado de Turno</h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Estado</span>
+          <div className="bg-white border border-slate-200/60 rounded-3xl p-6 shadow-sm">
+            <h3 className="font-extrabold mb-4 text-xs uppercase tracking-widest text-slate-400">Estado de Turno</h3>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <span className="text-slate-500 text-sm font-medium">Estado</span>
                 <span className={`font-bold text-sm px-3 py-1 rounded-full ${
-                  isActive ? 'bg-emerald-500/10 text-emerald-400' :
-                  route.status === 'COMPLETED' ? 'bg-blue-500/10 text-blue-400' :
-                  'bg-slate-700 text-slate-400'
+                  isActive ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                  route.status === 'COMPLETED' ? 'bg-blue-50 text-blue-600 border border-blue-100' :
+                  'bg-slate-50 text-slate-500 border border-slate-200'
                 }`}>
                   {isActive ? 'En Ruta' : route.status === 'COMPLETED' ? 'Completado' : 'Pendiente'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-sm">Paradas</span>
-                <span className="text-white font-bold text-sm">{route.totalWaypoints}</span>
+                <span className="text-slate-500 text-sm font-medium">Puntos de Control</span>
+                <span className="text-slate-800 font-black text-sm">{route.totalWaypoints}</span>
               </div>
             </div>
           </div>
